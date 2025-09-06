@@ -1,8 +1,0 @@
-{
-  "specDir": "spec",
-  "srcDir": "src",
-  "specFiles": ["aSpec.js"],
-  "reporters": ["./spec/someReporter.js"],
-  "jsLoader": "require",
-  "browser": "headlessChrome"
-}
