@@ -1,6 +1,6 @@
 {
-  "srcDir": "./projects/**/lib",
-  "testDir": "./projects/**/tests",
+  "srcDir": "./projects/libraries/src/lib",
+  "testDir": "./projects/libraries/src/tests",
   "outDir": "./dist/.vite-jasmine-build",
   "tsconfig": "tsconfig.json",
 
@@ -11,14 +11,8 @@
   "viteConfig": {
     "root": "./",
     "logLevel": "warn",
-    "define": {
-      "process.env.NODE_ENV": "\"test\""
-    },
-    "esbuild": {
-      "target": "es2022",
-      "keepNames": true
-    },
     "build": {
+      "outDir": "./dist/.vite-jasmine-build",
       "sourcemap": true,
       "minify": false,
       "rollupOptions": {
@@ -28,7 +22,7 @@
           "entryFileNames": "[name].js",
           "chunkFileNames": "chunks/[name]-[hash].js",
           "preserveModules": true,
-          "preserveModulesRoot": "./src/lib"
+          "preserveModulesRoot": "./projects/libraries/src/lib"
         }
       },
       "emptyOutDir": true
@@ -40,7 +34,7 @@
     "sourcemap": true,
     "minify": false,
     "preserveModules": true,
-    "preserveModulesRoot": "./src/lib"
+    "preserveModulesRoot": "./projects/libraries/src/lib"
   },
 
   "jasmineConfig": {

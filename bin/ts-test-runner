@@ -1,83 +1,38 @@
 #!/usr/bin/env node
 import path from 'path';
-import { createViteJasmineRunner } from '../lib/index.js'; // your ViteJasminePreprocessor
-import yargs from 'yargs/yargs';
-import { hideBin } from 'yargs/helpers';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+import { createViteJasmineRunner, loadViteJasmineBrowserConfig } from '../lib/index.js';
 
+// Resolve __dirname in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Determine project root (where user runs the CLI)
+const projectRoot = process.cwd();
+
+// Parse CLI args (simple support for --config)
+const argv = process.argv.slice(2);
+let configPath;
+const configFlagIndex = argv.indexOf('--config');
+if (configFlagIndex !== -1) {
+  configPath = path.resolve(projectRoot, argv[configFlagIndex + 1]);
+}
+
+// Load config relative to project root
+const config = loadViteJasmineBrowserConfig(configPath);
+
+// Ensure paths in config are absolute relative to project root
+if (config.srcDir) config.srcDir = path.resolve(projectRoot, config.srcDir);
+if (config.testDir) config.testDir = path.resolve(projectRoot, config.testDir);
+if (config.outDir) config.outDir = path.resolve(projectRoot, config.outDir);
+if (config.tsconfig) config.tsconfig = path.resolve(projectRoot, config.tsconfig);
+
+// Start the runner
 (async () => {
   try {
-    const argv = yargs(hideBin(process.argv))
-      .usage('Usage: $0 [options]')
-      .option('src', {
-        alias: 's',
-        type: 'string',
-        describe: 'Directory containing source TypeScript files',
-        default: './src',
-      })
-      .option('tests', {
-        alias: 't',
-        type: 'string',
-        describe: 'Directory containing test files',
-        default: './tests',
-      })
-      .option('out', {
-        alias: 'o',
-        type: 'string',
-        describe: 'Output directory for built JS files',
-        default: '.vite-jasmine-build',
-      })
-      .option('port', {
-        alias: 'p',
-        type: 'number',
-        describe: 'HTTP port for test server',
-        default: 8888,
-      })
-      .option('watch', {
-        alias: 'w',
-        type: 'boolean',
-        describe: 'Watch files and rebuild on changes',
-        default: false,
-      })
-      .option('browser', {
-        type: 'string',
-        describe: 'Browser name to launch (chrome, firefox, etc.)',
-        default: 'chrome',
-      })
-      .help()
-      .argv;
-
-    // Resolve absolute paths
-    const srcDir = path.resolve(argv.src);
-    const testDir = path.resolve(argv.tests);
-    const outDir = path.resolve(argv.out);
-
-    console.log('🚀 Starting TypeScript Test Runner...');
-    console.log('📁 Source directory:', srcDir);
-    console.log('📁 Test directory:', testDir);
-    console.log('📁 Output directory:', outDir);
-    console.log('🌐 Test server port:', argv.port);
-    console.log('👀 Watch mode:', argv.watch);
-
-    const runner = createViteJasmineRunner({
-      srcDir,
-      testDir,
-      outDir,
-      watch: argv.watch,
-      port: argv.port,
-      browser: argv.browser,
-    });
-
+    const runner = createViteJasmineRunner(config);
     await runner.start();
-
-    // Handle graceful shutdown
-    const shutdown = async (signal) => {
-      console.log(`\n🛑 Received ${signal}, stopping runner...`);
-      await runner.stop?.();
-      process.exit(0);
-    };
-    process.on('SIGINT', () => shutdown('SIGINT'));
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-
   } catch (err) {
     console.error('❌ Test runner failed:', err);
     process.exit(1);
