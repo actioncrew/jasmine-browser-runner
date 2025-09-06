@@ -2,7 +2,7 @@
 
 A lightweight, browser-based test runner for Jasmine 5 with TypeScript and Vite. Run Jasmine specs in browsers, headless browsers, or CI pipelines without Webpack or other bundlers.
 
-[Download TypeScript Test Runner](https://www.npmjs.com/package/typescript-test-runner)
+[Download TypeScript Test Runner](https://www.npmjs.com/package/@actioncrew/ts-test-runner)
 
 ## Features
 - Simple setup for TypeScript and Jasmine 5

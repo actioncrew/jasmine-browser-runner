@@ -315,9 +315,9 @@ export function createViteJasmineRunner(config: ViteJasmineConfig) {
 }
 
 export function loadViteJasmineBrowserConfig(configPath?: string): any {
-    const jsonPath = configPath || path.resolve(process.cwd(), 'typescript-test-runner-config.json');
+    const jsonPath = configPath || path.resolve(process.cwd(), 'ts-test-runner.config.json');
     if (!fs.existsSync(jsonPath)) {
-        console.warn('⚠️ typescript-test-runner-config.json not found, using defaults');
+        console.warn('⚠️ ts-test-runner.config.json not found, using defaults');
         return {};
     }
 
@@ -325,7 +325,7 @@ export function loadViteJasmineBrowserConfig(configPath?: string): any {
         const raw = fs.readFileSync(jsonPath, 'utf-8');
         return JSON.parse(raw);
     } catch (err) {
-        console.error('❌ Failed to parse typescript-test-runner-config.json', err);
+        console.error('❌ Failed to parse ts-test-runner.config.json', err);
         return {};
     }
 }

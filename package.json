@@ -1,25 +1,26 @@
 {
-  "name": "@actioncrew/typescript-test-runner",
+  "name": "@actioncrew/ts-test-runner",
   "version": "1.0.0",
   "description": "Serve and run your Jasmine specs in a browser",
   "bin": {
-    "ts-test-runner": "bin/typescript-test-runner"
+    "ts-test-runner": "bin/ts-test-runner"
   },
   "files": [
+    "LICENSE",
     "MIT.LICENSE",
     "README.md",
     "package.json",
     "bin/*.js",
     "lib/**/*.js",
-    "lib/examples/default_config.mjs",
-    "lib/examples/default_esm_config.mjs"
+    "lib/examples/default_esm_config.json"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "dev": "npx tsx ./index.ts"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jasmine/jasmine-browser-runner.git"
+    "url": "git+https://github.com/actioncrew/ts-test-runner.git"
   },
   "keywords": [
     "jasmine",
@@ -29,9 +30,9 @@
   "author": "Slackersoft",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/jasmine/jasmine-browser-runner/issues"
+    "url": "https://github.com/actioncrew/ts-test-runner/issues"
   },
-  "homepage": "https://github.com/jasmine/jasmine-browser-runner#readme",
+  "homepage": "https://github.com/actioncrew/ts-test-runner#readme",
   "dependencies": {
     "@types/express": "^5.0.3",
     "@types/jasmine": "^5.1.9",

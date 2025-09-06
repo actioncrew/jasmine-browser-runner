@@ -1,6 +1,6 @@
 {
-  "srcDir": "./projects/libraries/streamix/src/lib",
-  "testDir": "./projects/libraries/streamix/src/tests",
+  "srcDir": "./projects/**/lib",
+  "testDir": "./projects/**/tests",
   "outDir": "./dist/.vite-jasmine-build",
   "tsconfig": "tsconfig.json",
 
