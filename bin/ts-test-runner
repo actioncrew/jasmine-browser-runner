@@ -11,30 +11,228 @@ const __dirname = path.dirname(__filename);
 // Determine project root (where user runs the CLI)
 const projectRoot = process.cwd();
 
-// Parse CLI args (simple support for --config)
+// Parse CLI args
 const argv = process.argv.slice(2);
-let configPath;
-const configFlagIndex = argv.indexOf('--config');
-if (configFlagIndex !== -1) {
-  configPath = path.resolve(projectRoot, argv[configFlagIndex + 1]);
+const command = argv[0];
+
+// Default config template
+function createDefaultConfigTemplate() {
+  const projectName = getProjectName();
+
+  // base config with placeholders
+  const template = {
+    "srcDir": "./projects/[projectName]/src/lib",
+    "testDir": "./projects/[projectName]/src/tests",
+    "outDir": "./dist/.vite-jasmine-build",
+    "tsconfig": "tsconfig.json",
+
+    "port": 8888,
+    "browser": "chrome",
+    "watch": true,
+
+    "viteConfig": {
+      "root": "./",
+      "logLevel": "warn",
+      "build": {
+        "outDir": "./dist/.vite-jasmine-build",
+        "sourcemap": true,
+        "minify": false,
+        "rollupOptions": {
+          "preserveEntrySignatures": "strict",
+          "output": {
+            "format": "es",
+            "entryFileNames": "[name].js",
+            "chunkFileNames": "chunks/[name]-[hash].js",
+            "preserveModules": true,
+            "preserveModulesRoot": "./projects/[projectName]/src/lib"
+          }
+        },
+        "emptyOutDir": true
+      }
+    },
+
+    "viteBuildOptions": {
+      "target": "es2022",
+      "sourcemap": true,
+      "minify": false,
+      "preserveModules": true,
+      "preserveModulesRoot": "./projects/[projectName]/src/lib"
+    },
+
+    "jasmineConfig": {
+      "srcDir": "./dist/.vite-jasmine-build",
+      "specDir": "./dist/.vite-jasmine-build",
+      "srcFiles": ["**/*.js", "!**/*.spec.js", "!**/chunks/**"],
+      "specFiles": ["**/*.spec.js"],
+      "helpers": [],
+      "env": {
+        "stopSpecOnExpectationFailure": false,
+        "random": false
+      },
+      "browser": {
+        "name": "chrome"
+      },
+      "esm": true,
+      "esmFilenameExtension": ".js",
+      "jsLoader": "import",
+      "port": 8888,
+      "reporter": "html"
+    },
+
+    "htmlOptions": {
+      "title": "[projectName] Tests",
+      "includeSourceScripts": true,
+      "includeSpecScripts": true,
+      "bootScript": "boot1"
+    }
+  };
+
+  // recursive replacer for [projectName]
+  function replacePlaceholders(obj) {
+    if (typeof obj === 'string') {
+      return obj.replace(/\[projectName\]/g, projectName);
+    } else if (Array.isArray(obj)) {
+      return obj.map(replacePlaceholders);
+    } else if (obj && typeof obj === 'object') {
+      return Object.fromEntries(
+        Object.entries(obj).map(([k, v]) => [k, replacePlaceholders(v)])
+      );
+    }
+    return obj;
+  }
+
+  return replacePlaceholders(template);
 }
 
-// Load config relative to project root
-const config = loadViteJasmineBrowserConfig(configPath);
-
-// Ensure paths in config are absolute relative to project root
-if (config.srcDir) config.srcDir = path.resolve(projectRoot, config.srcDir);
-if (config.testDir) config.testDir = path.resolve(projectRoot, config.testDir);
-if (config.outDir) config.outDir = path.resolve(projectRoot, config.outDir);
-if (config.tsconfig) config.tsconfig = path.resolve(projectRoot, config.tsconfig);
-
-// Start the runner
-(async () => {
+// Function to get project name from package.json or fallback to folder name
+function getProjectName() {
   try {
+    const packageJsonPath = path.join(projectRoot, 'package.json');
+
+    if (!fs.existsSync(packageJsonPath)) {
+      console.warn('⚠️  No package.json found in project root, using fallback name');
+      return path.basename(projectRoot);
+    }
+
+    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    if (pkg && pkg.name) {
+      // strip @scope/ if present
+      return pkg.name.startsWith('@')
+        ? pkg.name.split('/')[1]
+        : pkg.name;
+    }
+
+    console.warn('⚠️  package.json has no "name" field, using folder name');
+    return path.basename(projectRoot);
+  } catch (err) {
+    console.error('❌ Failed to read project name from package.json:', err.message);
+    return path.basename(projectRoot);
+  }
+}
+
+
+// Function to create default config file
+function createDefaultConfig() {
+  const configPath = path.join(projectRoot, 'ts-test-runner.json');
+  
+  if (fs.existsSync(configPath)) {
+    console.log('⚠️  Configuration file already exists at:', configPath);
+    return;
+  }
+
+  try {
+    const defaultConfig = createDefaultConfigTemplate();
+    const projectName = getProjectName();
+    
+    fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
+    console.log('✅ Created test configuration file:', configPath);
+    console.log(`📦 Project name: ${projectName}`);
+    console.log('📝 You can customize the configuration by editing ts-test-runner.json');
+  } catch (err) {
+    console.error('❌ Failed to create config file:', err.message);
+    process.exit(1);
+  }
+}
+
+// Function to run tests
+async function runTests() {
+  try {
+    // Parse config path from --config flag
+    let configPath;
+    const configFlagIndex = argv.indexOf('--config');
+    if (configFlagIndex !== -1) {
+      configPath = path.resolve(projectRoot, argv[configFlagIndex + 1]);
+    }
+
+    // Load config relative to project root
+    const config = loadViteJasmineBrowserConfig(configPath);
+
+    // Ensure paths in config are absolute relative to project root
+    if (config.srcDir) config.srcDir = path.resolve(projectRoot, config.srcDir);
+    if (config.testDir) config.testDir = path.resolve(projectRoot, config.testDir);
+    if (config.outDir) config.outDir = path.resolve(projectRoot, config.outDir);
+    if (config.tsconfig) config.tsconfig = path.resolve(projectRoot, config.tsconfig);
+
+    // Start the runner
     const runner = createViteJasmineRunner(config);
     await runner.start();
   } catch (err) {
     console.error('❌ Test runner failed:', err);
+    process.exit(1);
+  }
+}
+
+// Function to show help
+function showHelp() {
+  console.log(`
+🧪 TypeScript Test Runner
+
+Usage:
+  npx ts-test-runner                    Run all tests
+  npx ts-test-runner init               Initialize test configuration
+  npx ts-test-runner --config <path>   Run tests with custom config file
+  npx ts-test-runner --help            Show this help message
+
+Commands:
+  init        Create a default ts-test-runner.json file in the current directory
+
+Options:
+  --config    Specify a custom configuration file path
+  --help      Show help information
+
+Examples:
+  npx ts-test-runner
+  npx ts-test-runner init
+  npx ts-test-runner --config ./custom-ts-test-runner.json
+`);
+}
+
+// Main execution logic
+(async () => {
+  try {
+    switch (command) {
+      case 'init':
+        createDefaultConfig();
+        break;
+      
+      case '--help':
+      case '-h':
+      case 'help':
+        showHelp();
+        break;
+      
+      case undefined:
+        // No command provided - run tests
+        await runTests();
+        break;
+      
+      default:
+        // Unknown command or command with flags - try to run tests
+        await runTests();
+        break;
+    }
+  } catch (err) {
+    console.error('❌ CLI failed:', err);
     process.exit(1);
   }
 })();
