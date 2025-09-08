@@ -1,6 +1,6 @@
 # TypeScript Test Runner
 
-A simple, browser-based test runner for TypeScript projects using Jasmine. Run your TypeScript tests directly in the browser without complex configuration.
+A simple test runner for TypeScript projects using Jasmine. Run your tests either **in the browser** (with an HTML reporter) or **directly in Node.js** (headless mode) — all without complex configuration.
 
 ## What it does
 
@@ -33,6 +33,7 @@ npm install --save-dev @actioncrew/ts-test-runner jasmine-core
 | `npx ts-test-runner init` | Initialize test configuration file |
 | `npx ts-test-runner --config <path>` | Run tests with custom config file |
 | `npx ts-test-runner --help` | Show help information |
+| `npx ts-test-runner --headless` | Run all tests directly in Node.js |
 
 ## Project Structure
 
@@ -57,13 +58,12 @@ The `ts-test-runner.json` file is automatically generated with your project name
 
 ```json
 {
-  "srcDir": "./projects/libraries/src/lib",
-  "testDir": "./projects/libraries/src/tests", 
+  "srcDir": "./projects/your-library/src/lib",
+  "testDir": "./projects/your-library/src/tests", 
   "outDir": "./dist/.vite-jasmine-build",
   "tsconfig": "tsconfig.json",
   "port": 8888,
   "browser": "chrome",
-  "watch": true,
   "htmlOptions": {
     "title": "your-project-name - Vite + Jasmine Tests"
   }
@@ -111,7 +111,6 @@ describe('My Module', () => {
 
 - ✅ **TypeScript Support**: Full TypeScript compilation with type checking
 - ✅ **Browser Testing**: Real browser environment for accurate testing
-- ✅ **Live Reloading**: Watch mode for development workflow
 - ✅ **Source Maps**: Debug TypeScript directly in browser DevTools  
 - ✅ **Project Name Detection**: Automatically uses your package.json name
 - ✅ **Modern ES Modules**: ESM support with proper module resolution
