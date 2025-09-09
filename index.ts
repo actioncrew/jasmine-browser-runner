@@ -193,7 +193,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
     const specFiles = builtFiles.filter(f => f.endsWith('.spec.js'));
     const imports = [...sourceFiles, ...specFiles]
       .map(f => `import "./${f}";`)
-      .join('\n        ');
+      .join('\n    ');
 
     const htmlContent = `<!DOCTYPE html>
 <html>
@@ -209,7 +209,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
 <body>
   <div class="jasmine_html-reporter"></div>
   <script type="module">
-        ${imports}
+    ${imports}
   </script>
 </body>
 </html>`;
