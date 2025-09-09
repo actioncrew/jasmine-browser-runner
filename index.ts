@@ -314,8 +314,6 @@ export class ViteJasminePreprocessor extends EventEmitter {
       timeout: 30000
     });
 
-    console.log('🚀 Running tests in headless browser...');
-
     try {
       // Wait for tests to complete with a reasonable timeout
       await page.waitForFunction(
@@ -704,7 +702,7 @@ export class ConsoleReporter {
       this.failedSpecs.forEach((spec, i) => {
         this.print(\`  \${i + 1}) \${spec.fullName}\\n\`);
         if (spec.failedExpectations?.length > 0) {
-          spec.failedExpectations.forEach((expectation: any) => {
+          spec.failedExpectations.forEach((expectation) => {
             this.print(\`     \${this.colored('red', expectation.message)}\\n\`);
           });
         }
