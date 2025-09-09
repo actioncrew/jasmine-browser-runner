@@ -793,16 +793,21 @@ process.on('uncaughtException', error => {
 // Import and execute specs
 (async function() {
   try {
-${imports}
-    env.execute();
+    ${imports}
+    await env.execute();
   } catch (error) {
     console.error('❌ Error during test execution:', error);
-    process.exit(1);
+    setImmediate(() => process.exit(1));
+  } finally {
+    // get failure count from the reporter
+    const reporter = env.reporter; // if you keep a reference to your ConsoleReporter
+    const failures = reporter ? reporter.failureCount : 0;
+
+    setImmediate(() => process.exit(failures === 0 ? 0 : 1));
   }
 })();
 `;
 
-    fs.writeFileSync(path.join(outDir, 'test-runner.js'), runnerContent);
     fs.writeFileSync(path.join(outDir, 'test-runner.js'), runnerContent);
     console.log('🤖 Generated headless test runner:', path.join(outDir, 'test-runner.js'));
   }
@@ -810,13 +815,13 @@ ${imports}
   private async runHeadlessTests(): Promise<boolean> {
     return new Promise((resolve) => {
       const testRunnerPath = path.join(this.config.outDir, 'test-runner.js');
-      
+
       if (!fs.existsSync(testRunnerPath)) {
         console.error('❌ Test runner not found. Build may have failed.');
         resolve(false);
         return;
       }
-      
+
       const child = spawn('node', [testRunnerPath], {
         stdio: 'inherit',
         cwd: process.cwd(),
@@ -826,6 +831,7 @@ ${imports}
         }
       });
 
+      // Remove the duplicate exit handler
       child.on('close', (code) => {
         const success = code === 0;
         resolve(success);
@@ -983,11 +989,13 @@ ${imports}
 
   async cleanup(): Promise<void> {
     if (this.wss) {
-      this.wss.close();
+      await new Promise<void>(resolve => this.wss!.close(() => resolve()));
       this.wss = null;
     }
     if (this.server) {
-      this.server.close();
+      await new Promise<void>((resolve, reject) => {
+        this.server!.close(err => (err ? reject(err) : resolve()));
+      });
       this.server = null;
     }
     this.wsClients = [];
@@ -1032,8 +1040,8 @@ ${imports}
         this.config.browser = 'node';
         this.generateTestRunner();
         const success = await this.runHeadlessTests();
+        await this.cleanup();
         process.exit(success ? 0 : 1);
-        return;
       }
 
       try {
