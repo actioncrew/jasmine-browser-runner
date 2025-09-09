@@ -1,22 +1,153 @@
 import { build as viteBuild, type InlineConfig } from 'vite';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
+import util from 'util';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
 import { EventEmitter } from 'events';
 import { createServer } from 'http';
 import { extname } from 'path';
 import { spawn } from 'child_process';
+import { WebSocketServer, WebSocket } from 'ws';
+
+export class ConsoleReporter {
+  private print: (...args: any[]) => void;
+  private showColors: boolean;
+  private specCount: number;
+  private executableSpecCount: number;
+  private failureCount: number;
+  private failedSpecs: any[];
+  private pendingSpecs: any[];
+  private ansi: Record<string, string>;
+
+  constructor() {
+    this.print = (...args) => process.stdout.write(util.format(...args));
+    this.showColors = true;
+    this.specCount = 0;
+    this.executableSpecCount = 0;
+    this.failureCount = 0;
+    this.failedSpecs = [];
+    this.pendingSpecs = [];
+    this.ansi = { 
+      green: '\x1B[32m', 
+      red: '\x1B[31m', 
+      yellow: '\x1B[33m', 
+      none: '\x1B[0m' 
+    };
+  }
+
+  jasmineStarted(options: any) {
+    this.specCount = 0;
+    this.executableSpecCount = 0;
+    this.failureCount = 0;
+    this.failedSpecs = [];
+    this.pendingSpecs = [];
+    this.print('🏃 Executing tests...\n\n');
+  }
+
+  specDone(result: any) {
+    this.specCount++;
+    
+    switch (result.status) {
+      case 'passed': 
+        this.executableSpecCount++; 
+        this.print(this.colored('green', '.')); 
+        break;
+      case 'failed': 
+        this.failureCount++; 
+        this.failedSpecs.push(result); 
+        this.executableSpecCount++; 
+        this.print(this.colored('red', 'F')); 
+        break;
+      case 'pending': 
+        this.pendingSpecs.push(result); 
+        this.executableSpecCount++; 
+        this.print(this.colored('yellow', '*')); 
+        break;
+    }
+  }
+
+  jasmineDone(result: any) {
+    const totalTime = result ? result.totalTime / 1000 : 0;
+    const failedSpecsPresent = this.failedSpecs.length > 0;
+    const pendingSpecsPresent = this.pendingSpecs.length > 0;
+
+    // Display failures
+    if (failedSpecsPresent) {
+      this.print('\n\n❌ Failures:\n\n');
+      this.failedSpecs.forEach((spec, i) => {
+        this.print(`  ${i + 1}) ${spec.fullName}\n`);
+        if (spec.failedExpectations?.length > 0) {
+          spec.failedExpectations.forEach((expectation: any) => {
+            this.print(`     ${this.colored('red', expectation.message)}\n`);
+          });
+        }
+      });
+    }
+
+    // Display pending specs
+    if (pendingSpecsPresent) {
+      this.print(`${failedSpecsPresent ? '\n': '\n\n'}⏸️  Pending specs:\n\n`);
+      this.pendingSpecs.forEach((spec, i) => {
+        this.print(`  ${i + 1}) ${spec.fullName}\n`);
+        if (spec.pendingReason) {
+          this.print(`     ${this.colored('yellow', spec.pendingReason)}\n`);
+        }
+      });
+    }
+
+    // Display summary
+    this.print(`${failedSpecsPresent || pendingSpecsPresent ? '\n': '\n\n'}📊 Summary: `);
+
+    const specsText = this.executableSpecCount + ' ' + this.plural('spec', this.executableSpecCount);
+    const failuresText = this.failureCount + ' ' + this.plural('failure', this.failureCount);
+    const pendingText = this.pendingSpecs.length + ' ' + this.plural('pending spec', this.pendingSpecs.length);
+    
+    this.print(specsText);
+    if (this.failureCount > 0) {
+      this.print(', ' + this.colored('red', failuresText));
+    } else {
+      this.print(', ' + failuresText);
+    }
+    if (this.pendingSpecs.length > 0) {
+      this.print(', ' + this.colored('yellow', pendingText));
+    }
+    
+    this.print('\n');
+    this.print('⏱️  Finished in ' + totalTime.toFixed(3) + ' ' + this.plural('second', totalTime));
+    this.print('\n\n');
+
+    // Final status
+    if (this.failureCount === 0 && this.pendingSpecs.length === 0) {
+      this.print(this.colored('green', '✅ All specs passed!\n'));
+    } else if (this.failureCount === 0) {
+      this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', '(with ' + this.pendingSpecs.length + ' pending)\n'));
+    } else {
+      this.print(this.colored('red', '❌ ' + this.failureCount + ' ' + this.plural('spec', this.failureCount) + ' failed\n'));
+    }
+
+    return this.failureCount;
+  }
+
+  private colored(color: string, str: string): string {
+    return this.showColors ? this.ansi[color] + str + this.ansi.none : str;
+  }
+
+  private plural(str: string, count: number): string {
+    return count === 1 ? str : str + 's';
+  }
+}
 
 export interface ViteJasmineConfig {
-  srcDir: string;                  // Source files root (e.g., ./src)
-  testDir: string;                 // Test files root (e.g., ./spec)
-  outDir: string;                  // Output directory for Vite build
-  tsconfig?: string;               // Path to tsconfig.json
-  port?: number;                   // HTTP server port
-  browser?: string;                // Browser name
-  headless?: boolean;              // Run in headless mode
-  viteConfig?: InlineConfig;       // Custom Vite config overrides
+  srcDir: string;
+  testDir: string;
+  outDir: string;
+  tsconfig?: string;
+  port?: number;
+  browser?: string;
+  headless?: boolean;
+  viteConfig?: InlineConfig;
   viteBuildOptions?: {
     target?: string;
     sourcemap?: boolean;
@@ -28,7 +159,7 @@ export interface ViteJasmineConfig {
     srcFiles?: string[];
     specFiles?: string[];
     helpers?: string[];
-    env?: { stopSpecOnExpectationFailure?: boolean; random?: boolean };
+    env?: { stopSpecOnExpectationFailure?: boolean; random?: boolean; timeout?: number; };
     browser?: { name: string; headless?: boolean };
     port?: number;
     reporter?: 'html' | 'console';
@@ -46,6 +177,12 @@ export interface ViteJasmineConfig {
 export class ViteJasminePreprocessor extends EventEmitter {
   private config: ViteJasmineConfig;
   private server: ReturnType<typeof createServer> | null = null;
+  private wss: WebSocketServer | null = null;
+  private wsClients: WebSocket[] = [];
+  private consoleReporter: ConsoleReporter | null = null;
+  private finalResult: any = null;
+  private testCompleted: boolean = false;
+  private testSuccess: boolean = false;
 
   constructor(config: ViteJasmineConfig) {
     super();
@@ -55,6 +192,153 @@ export class ViteJasminePreprocessor extends EventEmitter {
       headless: false, 
       ...config 
     };
+  }
+
+  private createWebSocketServer(): void {
+    if (!this.server) return;
+    
+    this.wss = new WebSocketServer({ server: this.server });
+    
+    this.wss.on('connection', (ws: WebSocket) => {
+      console.log('🔌 WebSocket client connected');
+      this.wsClients.push(ws);
+      
+      // Handle incoming messages from browser
+      ws.on('message', (data: Buffer) => {
+        try {
+          const message = JSON.parse(data.toString());
+          this.handleWebSocketMessage(message);
+        } catch (error) {
+          console.error('❌ Failed to parse WebSocket message:', error);
+        }
+      });
+      
+      ws.on('close', () => {
+        this.wsClients = this.wsClients.filter(client => client !== ws);
+      });
+      
+      ws.on('error', (error) => {
+        console.error('❌ WebSocket error:', error);
+        this.wsClients = this.wsClients.filter(client => client !== ws);
+      });
+    });
+  }
+
+  private handleWebSocketMessage(message: any): void {
+    if (!this.consoleReporter) {
+      this.consoleReporter = new ConsoleReporter();
+    }
+
+    try {
+      switch (message.type) {
+        case 'start':
+          this.consoleReporter.jasmineStarted({ 
+            totalSpecsDefined: message.totalSpecs || 0 
+          });
+          break;
+          
+        case 'specDone':
+          // Forward the spec result to console reporter
+          this.consoleReporter.specDone({
+            id: message.id,
+            description: message.description,
+            fullName: message.fullName,
+            status: message.status,
+            passedExpectations: message.passedExpectations || [],
+            failedExpectations: message.failedExpectations || [],
+            pendingReason: message.pendingReason || null,
+            duration: message.duration || 0
+          });
+          break;
+          
+        case 'done':
+          this.finalResult = message;
+          
+          // Call jasmineDone and get failure count
+          const failureCount = this.consoleReporter.jasmineDone({
+            totalTime: message.totalTime || 0,
+            overallStatus: message.overallStatus || 'complete',
+            incompleteReason: message.incompleteReason || null,
+            order: message.order || null
+          });
+          
+          // Set flags that tests are finished (for browser waiting)
+          this.testCompleted = true;
+          this.testSuccess = failureCount === 0;
+          break;
+          
+        default:
+          console.warn('⚠️ Unknown WebSocket message type:', message.type);
+      }
+    } catch (error) {
+      console.error('❌ Error handling WebSocket message:', error);
+    }
+  }
+
+  private async runHeadlessBrowserTests(browserType: any): Promise<boolean> {
+    const browser = await browserType.launch({ 
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    const page = await browser.newPage();
+    page.setDefaultTimeout(0);
+
+    // Set up console message handling
+    page.on('console', (msg: any) => {
+      const text = msg.text();
+      const type = msg.type();
+      
+      // Filter out WebSocket debug messages but keep important ones
+      if (!text.includes('WebSocket') || text.includes('error') || text.includes('failed')) {
+        if (type === 'error') {
+          console.error('BROWSER ERROR:', text);
+        } else if (type === 'warn') {
+          console.warn('BROWSER WARN:', text);
+        }
+      }
+    });
+
+    // Handle page errors
+    page.on('pageerror', (error: any) => {
+      console.error('❌ Page error:', error.message);
+    });
+
+    page.on('requestfailed', (request: any) => {
+      console.error('❌ Request failed:', request.url(), request.failure()?.errorText);
+    });
+
+    console.log('🌐 Navigating to test page...');
+    await page.goto(`http://localhost:${this.config.port}/index.html`, {
+      waitUntil: 'networkidle0',
+      timeout: 30000
+    });
+
+    console.log('🚀 Running tests in headless browser...');
+
+    try {
+      // Wait for tests to complete with a reasonable timeout
+      await page.waitForFunction(
+        () => (window as any).jasmineFinished === true,
+        { timeout: this.config.jasmineConfig?.env?.timeout ?? 120000 }
+      );
+
+      // Wait a bit more for any final messages
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Check if we have results via WebSocket
+      if (!this.testCompleted) {
+        throw new Error('Tests completed but no results received via WebSocket');
+      }
+
+      await browser.close();
+      return this.testSuccess;
+
+    } catch (error) {
+      console.error('❌ Test execution failed:', error);
+      await browser.close();
+      throw error;
+    }
   }
 
   private createViteConfig(): InlineConfig {
@@ -162,10 +446,11 @@ export class ViteJasminePreprocessor extends EventEmitter {
       console.log(`📦 Building ${Object.keys(input).length} files...`);
       await viteBuild(viteConfig);
 
-      // Generate appropriate output based on mode
-      if (!this.config.headless) {
-        this.generateHtmlFile();
-      } else {
+      // Generate HTML for both modes - needed for headless browser too
+      this.generateHtmlFile();
+
+      // Generate test runner only for Node.js headless mode
+      if (this.config.headless && this.config.browser === 'node') {
         this.generateTestRunner();
       }
     } catch (error) {
@@ -193,7 +478,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
     const specFiles = builtFiles.filter(f => f.endsWith('.spec.js'));
     const imports = [...sourceFiles, ...specFiles]
       .map(f => `import "./${f}";`)
-      .join('\n    ');
+      .join('\n        ');
 
     const htmlContent = `<!DOCTYPE html>
 <html>
@@ -205,6 +490,116 @@ export class ViteJasminePreprocessor extends EventEmitter {
   <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.10.0/lib/jasmine-core/jasmine-html.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.10.0/lib/jasmine-core/boot0.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.10.0/lib/jasmine-core/boot1.js"></script>
+  <script>
+    function WebSocketEventForwarder() {
+      this.ws = null;
+      this.connected = false;
+      this.messageQueue = [];
+      
+      this.connect = function() {
+        try {
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = protocol + '//' + window.location.host;
+          console.log('Connecting to WebSocket:', wsUrl);
+          
+          this.ws = new WebSocket(wsUrl);
+          
+          this.ws.onopen = () => {
+            console.log('WebSocket connected');
+            this.connected = true;
+            
+            // Send any queued messages
+            while (this.messageQueue.length > 0) {
+              const queuedMessage = this.messageQueue.shift();
+              this.send(queuedMessage);
+            }
+          };
+          
+          this.ws.onclose = () => {
+            console.log('WebSocket disconnected');
+            this.connected = false;
+          };
+          
+          this.ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            this.connected = false;
+          };
+        } catch (error) {
+          console.error('Failed to create WebSocket:', error);
+        }
+      };
+      
+      this.send = function(message) {
+        if (this.connected && this.ws && this.ws.readyState === WebSocket.OPEN) {
+          try {
+            this.ws.send(JSON.stringify(message));
+            console.log('Sent WebSocket message:', message.type);
+          } catch (error) {
+            console.error('Failed to send WebSocket message:', error);
+          }
+        } else {
+          // Queue message if not connected
+          console.log('Queuing message (not connected):', message.type);
+          this.messageQueue.push(message);
+        }
+      };
+      
+      this.jasmineStarted = function(suiteInfo) {
+        console.log('Jasmine started with', suiteInfo.totalSpecsDefined, 'specs');
+        this.connect();
+        
+        this.send({
+          type: 'start',
+          totalSpecs: suiteInfo.totalSpecsDefined,
+          order: suiteInfo.order,
+          timestamp: Date.now()
+        });
+      };
+      
+      this.specDone = function(result) {
+        console.log('Spec completed:', result.fullName, '(' + result.status + ')');
+        
+        this.send({
+          type: 'specDone',
+          id: result.id,
+          description: result.description,
+          fullName: result.fullName,
+          status: result.status,
+          passedExpectations: result.passedExpectations || [],
+          failedExpectations: result.failedExpectations || [],
+          pendingReason: result.pendingReason || null,
+          duration: result.duration || 0,
+          timestamp: Date.now()
+        });
+      };
+      
+      this.jasmineDone = function(result) {
+        console.log('Jasmine completed');
+        
+        this.send({
+          type: 'done',
+          totalTime: result.totalTime || 0,
+          overallStatus: result.overallStatus || 'complete',
+          incompleteReason: result.incompleteReason || null,
+          order: result.order || null,
+          timestamp: Date.now()
+        });
+        
+        // Set global flag for headless browser detection
+        window.jasmineFinished = true;
+        
+        // Close WebSocket after a short delay
+        setTimeout(() => {
+          if (this.ws) {
+            this.ws.close();
+          }
+        }, 1000);
+      };
+    }
+    
+    // Add the WebSocket forwarder as a reporter
+    jasmine.getEnv().addReporter(new WebSocketEventForwarder());
+  </script>
 </head>
 <body>
   <div class="jasmine_html-reporter"></div>
@@ -216,7 +611,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
 
     const htmlPath = path.join(htmlDir, 'index.html');
     fs.writeFileSync(htmlPath, htmlContent);
-    console.log('📄 Generated test HTML:', htmlPath);
+    console.log('📄 Generated test HTML with WebSocket forwarding:', htmlPath);
   }
 
   private generateTestRunner(): void {
@@ -242,115 +637,129 @@ export class ViteJasminePreprocessor extends EventEmitter {
 import jasmineCore from 'jasmine-core';
 import util from 'util';
 
-/**
- * A reporter that prints spec and suite results to the console.
- */
-function ConsoleReporter() {
-  let print = (...args) => process.stdout.write(util.format(...args)),
-      showColors = true,
-      specCount = 0,
-      executableSpecCount = 0,
-      failureCount = 0,
-      failedSpecs = [],
-      pendingSpecs = [],
-      ansi = { green: '\\x1B[32m', red: '\\x1B[31m', yellow: '\\x1B[33m', none: '\\x1B[0m' };
-  
-  this.jasmineStarted = function(options) {
-    specCount = 0;
-    executableSpecCount = 0;
-    failureCount = 0;
-    failedSpecs = [];
-    pendingSpecs = [];
-    print('🏃 Executing tests in headless mode...\\n\\n');
-  };
-  
-  this.specDone = function(result) {
-    specCount++;
+// Console Reporter class
+export class ConsoleReporter {
+  print;
+  showColors;
+  specCount;
+  executableSpecCount;
+  failureCount;
+  failedSpecs;
+  pendingSpecs;
+  ansi;
+
+  constructor() {
+    this.print = (...args) => process.stdout.write(util.format(...args));
+    this.showColors = true;
+    this.specCount = 0;
+    this.executableSpecCount = 0;
+    this.failureCount = 0;
+    this.failedSpecs = [];
+    this.pendingSpecs = [];
+    this.ansi = {
+      green: '\\x1B[32m',
+      red: '\\x1B[31m',
+      yellow: '\\x1B[33m',
+      none: '\\x1B[0m'
+    };
+  }
+
+  jasmineStarted(options) {
+    this.specCount = 0;
+    this.executableSpecCount = 0;
+    this.failureCount = 0;
+    this.failedSpecs = [];
+    this.pendingSpecs = [];
+    this.print('🏃 Executing tests...\\n\\n');
+  }
+
+  specDone(result) {
+    this.specCount++;
     switch (result.status) {
-      case 'passed': 
-        executableSpecCount++; 
-        print(colored('green', '.')); 
+      case 'passed':
+        this.executableSpecCount++;
+        this.print(this.colored('green', '.'));
         break;
-      case 'failed': 
-        failureCount++; 
-        failedSpecs.push(result); 
-        executableSpecCount++; 
-        print(colored('red', 'F')); 
+      case 'failed':
+        this.failureCount++;
+        this.failedSpecs.push(result);
+        this.executableSpecCount++;
+        this.print(this.colored('red', 'F'));
         break;
-      case 'pending': 
-        pendingSpecs.push(result); 
-        executableSpecCount++; 
-        print(colored('yellow', '*')); 
+      case 'pending':
+        this.pendingSpecs.push(result);
+        this.executableSpecCount++;
+        this.print(this.colored('yellow', '*'));
         break;
     }
-  };
+  }
 
-  this.jasmineDone = function(result) {
-    const totalTime = result ? result.totalTime / 1000 : 0;
+  jasmineDone(result) {
+    const failedSpecsPresent = this.failedSpecs.length > 0;
+    const pendingSpecsPresent = this.pendingSpecs.length > 0;
 
     // Display failures
-    if (failedSpecs.length > 0) {
-      print('\\n\\n❌ Failures:\\n\\n');
-      failedSpecs.forEach((spec, i) => {
-        print(\`  \${i + 1}) \${spec.fullName}\\n\`);
+    if (failedSpecsPresent) {
+      this.print('\\n\\n❌ Failures:\\n\\n');
+      this.failedSpecs.forEach((spec, i) => {
+        this.print(\`  \${i + 1}) \${spec.fullName}\\n\`);
         if (spec.failedExpectations?.length > 0) {
-          spec.failedExpectations.forEach(expectation => {
-            print(\`     \${colored('red', expectation.message)}\\n\`);
+          spec.failedExpectations.forEach((expectation: any) => {
+            this.print(\`     \${this.colored('red', expectation.message)}\\n\`);
           });
         }
       });
     }
 
     // Display pending specs
-    if (pendingSpecs.length > 0) {
-      print('\\n\\n⏸️  Pending specs:\\n\\n');
-      pendingSpecs.forEach((spec, i) => {
-        print(\`  \${i + 1}) \${spec.fullName}\\n\`);
+    if (pendingSpecsPresent) {
+      this.print(\`\${failedSpecsPresent ? '\\n': '\\n\\n'}⏸️  Pending specs:\\n\\n\`);
+      this.pendingSpecs.forEach((spec, i) => {
+        this.print(\`  \${i + 1}) \${spec.fullName}\\n\`);
         if (spec.pendingReason) {
-          print(\`     \${colored('yellow', spec.pendingReason)}\\n\`);
+          this.print(\`     \${this.colored('yellow', spec.pendingReason)}\\n\`);
         }
       });
     }
 
     // Display summary
-    print('\\n📊 Summary: ');
+    this.print(\`\${failedSpecsPresent || pendingSpecsPresent ? '\\n': '\\n\\n'}📊 Summary: \`);
+
+    const specsText = this.executableSpecCount + ' ' + this.plural('spec', this.executableSpecCount);
+    const failuresText = this.failureCount + ' ' + this.plural('failure', this.failureCount);
+    const pendingText = this.pendingSpecs.length + ' ' + this.plural('pending spec', this.pendingSpecs.length);
     
-    const specsText = executableSpecCount + ' ' + plural('spec', executableSpecCount);
-    const failuresText = failureCount + ' ' + plural('failure', failureCount);
-    const pendingText = pendingSpecs.length + ' ' + plural('pending spec', pendingSpecs.length);
-    
-    print(specsText);
-    if (failureCount > 0) {
-      print(', ' + colored('red', failuresText));
+    this.print(specsText);
+    if (this.failureCount > 0) {
+      this.print(', ' + this.colored('red', failuresText));
     } else {
-      print(', ' + failuresText);
+      this.print(', ' + failuresText);
     }
-    if (pendingSpecs.length > 0) {
-      print(', ' + colored('yellow', pendingText));
+    if (this.pendingSpecs.length > 0) {
+      this.print(', ' + this.colored('yellow', pendingText));
     }
     
-    print('\\n');
-    print('⏱️  Finished in ' + totalTime.toFixed(3) + ' ' + plural('second', totalTime));
-    print('\\n\\n');
+    this.print('\\n');
+    this.print('⏱️  Finished in ' + totalTime.toFixed(3) + ' ' + this.plural('second', totalTime));
+    this.print('\\n\\n');
 
     // Final status
-    if (failureCount === 0 && pendingSpecs.length === 0) {
-      print(colored('green', '✅ All specs passed!\\n'));
-    } else if (failureCount === 0) {
-      print(colored('green', '✅ All specs passed! ') + colored('yellow', '(with ' + pendingSpecs.length + ' pending)\\n'));
+    if (this.failureCount === 0 && this.pendingSpecs.length === 0) {
+      this.print(this.colored('green', '✅ All specs passed!\\n'));
+    } else if (this.failureCount === 0) {
+      this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', '(with ' + this.pendingSpecs.length + ' pending)\\n'));
     } else {
-      print(colored('red', '❌ ' + failureCount + ' ' + plural('spec', failureCount) + ' failed\\n'));
+      this.print(this.colored('red', '❌ ' + this.failureCount + ' ' + this.plural('spec', this.failureCount) + ' failed\\n'));
     }
 
-    const exitCode = failureCount === 0 ? 0 : 1;
-    process.exit(exitCode);
-  };
-
-  function colored(color, str) {
-    return showColors ? ansi[color] + str + ansi.none : str;
+    return this.failureCount;
   }
 
-  function plural(str, count) {
+  colored(color, str) {
+    return this.showColors ? this.ansi[color] + str + this.ansi.none : str;
+  }
+
+  plural(str, count) {
     return count === 1 ? str : str + 's';
   }
 }
@@ -394,6 +803,7 @@ ${imports}
 })();
 `;
 
+    fs.writeFileSync(path.join(outDir, 'test-runner.js'), runnerContent);
     fs.writeFileSync(path.join(outDir, 'test-runner.js'), runnerContent);
     console.log('🤖 Generated headless test runner:', path.join(outDir, 'test-runner.js'));
   }
@@ -444,6 +854,86 @@ ${imports}
     return types[ext] || 'application/octet-stream';
   }
 
+  private async checkBrowser(browserName: string): Promise<any | null> {
+    let browser: any = null;
+
+    try {
+      // Try to dynamically import Playwright
+      const playwright = await import('playwright');
+
+      switch (browserName.toLowerCase()) {
+        case 'chromium':
+        case 'chrome':
+          browser = playwright.chromium;
+          break;
+        case 'firefox':
+          browser = playwright.firefox;
+          break;
+        case 'webkit':
+        case 'safari':
+          browser = playwright.webkit;
+          break;
+        default:
+          console.warn(`⚠️ Unknown browser "${browserName}", falling back to Node.js mode`);
+          return null;
+      }
+
+      // Check if the executable exists
+      const exePath = browser.executablePath();
+      if (!exePath || !fs.existsSync(exePath)) {
+        console.error(`❌ Browser "${browserName}" is not installed.`);
+        console.log(`💡 Tip: Install it by running:\n   npx playwright install ${browserName.toLowerCase()}`);
+        return null;
+      }
+
+      return browser;
+    } catch (err: any) {
+      if (err.code === 'MODULE_NOT_FOUND') {
+        console.log(`ℹ️ Playwright not installed. Browser "${browserName}" not available.`);
+        console.log(`💡 Tip: Install Playwright to enable browser testing:\n   npm install playwright`);
+      } else {
+        console.error(`❌ Browser execution failed for "${browserName}": ${err.message}`);
+      }
+      return null;
+    }
+  }
+
+  private async waitForServerReady(url: string, timeout = 5000): Promise<void> {
+    const start = Date.now();
+    const { hostname, port } = new URL(url);
+
+    console.log(`⏳ Waiting for server to be ready at ${url}...`);
+
+    while (Date.now() - start < timeout) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const req = http.request({
+            hostname,
+            port,
+            path: '/',
+            method: 'HEAD',
+            timeout: 1000
+          }, (res) => {
+            res.resume();
+            resolve();
+          });
+
+          req.on("error", reject);
+          req.on("timeout", () => {
+            req.destroy();
+            reject(new Error('Timeout'));
+          });
+
+          req.end();
+        });
+        return; // success - no console.log here
+      } catch {
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+    throw new Error(`Server not ready at ${url} after ${timeout}ms`);
+  }
+
   private async startSimpleServer(): Promise<void> {
     const port = this.config.port!;
     const outDir = this.config.outDir;
@@ -476,10 +966,12 @@ ${imports}
       }
     });
 
+    this.createWebSocketServer();
+
     return new Promise((resolve, reject) => {
       this.server!.listen(port, () => {
         console.log(`🚀 Test server running at http://localhost:${port}`);
-        console.log('📁 Serving files from:', outDir);
+        console.log('📡 WebSocket server ready for real-time test reporting');
         resolve();
       });
 
@@ -491,15 +983,20 @@ ${imports}
   }
 
   async cleanup(): Promise<void> {
+    if (this.wss) {
+      this.wss.close();
+      this.wss = null;
+    }
     if (this.server) {
       this.server.close();
       this.server = null;
     }
+    this.wsClients = [];
   }
 
   async start(): Promise<void> {
     console.log(`🚀 Starting Vite + Jasmine Test ${this.config.headless ? 'Runner (Headless)' : 'Server'}...`);
-    
+
     // Ensure absolute paths
     this.config.outDir = path.resolve(this.config.outDir);
     this.config.srcDir = path.resolve(this.config.srcDir);
@@ -516,14 +1013,51 @@ ${imports}
       process.exit(1);
     }
 
-    if (this.config.headless) {
-      // Headless mode: run tests and exit
+    // Handle headless browser mode
+    if (this.config.headless && this.config.browser !== 'node') {
+      await this.startSimpleServer();
+      await this.waitForServerReady(`http://localhost:${this.config.port}/index.html`, 10000);
+
+      // Initialize the console reporter
+      this.consoleReporter = new ConsoleReporter();
+
+      let browserType = null;
+      try {
+        browserType = await this.checkBrowser(this.config.browser!);
+      } catch (error: any) {
+        console.log(`⚠️ Browser detection failed: ${error.message}`);
+      }
+
+      if (!browserType) {
+        console.log('⚠️ Headless browser not available. Falling back to Node.js runner.');
+        this.config.browser = 'node';
+        this.generateTestRunner();
+        const success = await this.runHeadlessTests();
+        process.exit(success ? 0 : 1);
+        return;
+      }
+
+      try {
+        const success = await this.runHeadlessBrowserTests(browserType);
+        await this.cleanup();
+        process.exit(success ? 0 : 1);
+      } catch (error) {
+        console.error('❌ Browser test execution failed:', error);
+        await this.cleanup();
+        process.exit(1);
+      }
+    }
+    // Handle Node.js headless mode
+    else if (this.config.headless && this.config.browser === 'node') {
       const success = await this.runHeadlessTests();
       process.exit(success ? 0 : 1);
-    } else {
-      // Browser mode: start server and keep running
+    }
+    // Handle regular browser mode (headed)
+    else {
       await this.startSimpleServer();
-      
+      console.log('📊 Open the above URL in your browser to run tests');
+      console.log('⏹️  Press Ctrl+C to stop the server');
+
       // Handle graceful shutdown
       process.on('SIGINT', async () => {
         console.log('\n🛑 Shutting down...');
