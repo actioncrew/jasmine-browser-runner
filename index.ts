@@ -48,7 +48,6 @@ export class ConsoleReporter {
 
   specDone(result: any) {
     this.specCount++;
-    
     switch (result.status) {
       case 'passed': 
         this.executableSpecCount++; 
@@ -88,7 +87,7 @@ export class ConsoleReporter {
 
     // Display pending specs
     if (pendingSpecsPresent) {
-      this.print(`${failedSpecsPresent ? '\n': '\n\n'}⏸️  Pending specs:\n\n`);
+      this.print(`${failedSpecsPresent ? '\n' : '\n\n'}⏸️  Pending specs:\n\n`);
       this.pendingSpecs.forEach((spec, i) => {
         this.print(`  ${i + 1}) ${spec.fullName}\n`);
         if (spec.pendingReason) {
@@ -98,36 +97,34 @@ export class ConsoleReporter {
     }
 
     // Display summary
-    this.print(`${failedSpecsPresent || pendingSpecsPresent ? '\n': '\n\n'}📊 Summary: `);
-
+    this.print(`${failedSpecsPresent || pendingSpecsPresent ? '\n' : '\n\n'}📊 Summary: `);
     const specsText = this.executableSpecCount + ' ' + this.plural('spec', this.executableSpecCount);
     const failuresText = this.failureCount + ' ' + this.plural('failure', this.failureCount);
     const pendingText = this.pendingSpecs.length + ' ' + this.plural('pending spec', this.pendingSpecs.length);
     
     this.print(specsText);
-    if (this.failureCount > 0) {
-      this.print(', ' + this.colored('red', failuresText));
-    } else {
-      this.print(', ' + failuresText);
-    }
-    if (this.pendingSpecs.length > 0) {
-      this.print(', ' + this.colored('yellow', pendingText));
-    }
+    if (this.failureCount > 0) this.print(', ' + this.colored('red', failuresText));
+    else this.print(', ' + failuresText);
+    if (this.pendingSpecs.length > 0) this.print(', ' + this.colored('yellow', pendingText));
     
     this.print('\n');
     this.print('⏱️  Finished in ' + totalTime.toFixed(3) + ' ' + this.plural('second', totalTime));
     this.print('\n\n');
 
-    // Final status
     if (this.failureCount === 0 && this.pendingSpecs.length === 0) {
       this.print(this.colored('green', '✅ All specs passed!\n'));
     } else if (this.failureCount === 0) {
-      this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', '(with ' + this.pendingSpecs.length + ' pending)\n'));
+      this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', `(with ${this.pendingSpecs.length} pending)\n`));
     } else {
-      this.print(this.colored('red', '❌ ' + this.failureCount + ' ' + this.plural('spec', this.failureCount) + ' failed\n'));
+      this.print(this.colored('red', `❌ ${this.failureCount} ${this.plural('spec', this.failureCount)} failed\n`));
     }
 
     return this.failureCount;
+  }
+
+  testsAborted(message?: string) {
+    this.print('\n\n'); // ensure newline
+    this.print(this.colored('red', `❌ Tests aborted${message ? ': ' + message : ''}\n`));
   }
 
   private colored(color: string, str: string): string {
@@ -138,6 +135,7 @@ export class ConsoleReporter {
     return count === 1 ? str : str + 's';
   }
 }
+
 
 export interface ViteJasmineConfig {
   srcDir: string;
@@ -180,7 +178,6 @@ export class ViteJasminePreprocessor extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private wsClients: WebSocket[] = [];
   private consoleReporter: ConsoleReporter | null = null;
-  private finalResult: any = null;
   private testCompleted: boolean = false;
   private testSuccess: boolean = false;
 
@@ -252,8 +249,6 @@ export class ViteJasminePreprocessor extends EventEmitter {
           break;
           
         case 'done':
-          this.finalResult = message;
-          
           // Call jasmineDone and get failure count
           const failureCount = this.consoleReporter.jasmineDone({
             totalTime: message.totalTime || 0,
@@ -284,47 +279,39 @@ export class ViteJasminePreprocessor extends EventEmitter {
     const page = await browser.newPage();
     page.setDefaultTimeout(0);
 
-    // Set up console message handling
+    let interrupted = false;
+
+    // Handle Ctrl+C
+    const sigintHandler = () => { 
+      interrupted = true; 
+    };
+    process.once('SIGINT', sigintHandler);
+
+    // Unified console and error logging
     page.on('console', (msg: any) => {
       const text = msg.text();
       const type = msg.type();
-      
-      // Filter out WebSocket debug messages but keep important ones
-      if (!text.includes('WebSocket') || text.includes('error') || text.includes('failed')) {
-        if (type === 'error') {
-          console.error('BROWSER ERROR:', text);
-        } else if (type === 'warn') {
-          console.warn('BROWSER WARN:', text);
-        }
+      if (text.match(/error|failed/i)) {
+        if (type === 'error') console.error('BROWSER ERROR:', text);
+        else if (type === 'warn') console.warn('BROWSER WARN:', text);
       }
     });
 
-    // Handle page errors
-    page.on('pageerror', (error: any) => {
-      console.error('❌ Page error:', error.message);
-    });
-
-    page.on('requestfailed', (request: any) => {
-      console.error('❌ Request failed:', request.url(), request.failure()?.errorText);
-    });
+    page.on('pageerror', (error: any) => console.error('❌ Page error:', error.message));
+    page.on('requestfailed', (request: any) => console.error('❌ Request failed:', request.url(), request.failure()?.errorText));
 
     console.log('🌐 Navigating to test page...');
-    await page.goto(`http://localhost:${this.config.port}/index.html`, {
-      waitUntil: 'networkidle0',
-      timeout: 30000
-    });
+    await page.goto(`http://localhost:${this.config.port}/index.html`, { waitUntil: 'networkidle0', timeout: 30000 });
 
     try {
-      // Wait for tests to complete with a reasonable timeout
-      await page.waitForFunction(
-        () => (window as any).jasmineFinished === true,
-        { timeout: this.config.jasmineConfig?.env?.timeout ?? 120000 }
-      );
+      // Wait for tests to finish
+      await page.waitForFunction(() => (window as any).jasmineFinished === true, {
+        timeout: this.config.jasmineConfig?.env?.timeout ?? 120000
+      });
 
-      // Wait a bit more for any final messages
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Small buffer for final messages
+      await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Check if we have results via WebSocket
       if (!this.testCompleted) {
         throw new Error('Tests completed but no results received via WebSocket');
       }
@@ -333,9 +320,16 @@ export class ViteJasminePreprocessor extends EventEmitter {
       return this.testSuccess;
 
     } catch (error) {
+      if (interrupted) {
+        console.log('\n\n🛑 Tests aborted by user (Ctrl+C)');
+        await browser.close();
+        return false; // Not an error, just aborted
+      }
       console.error('❌ Test execution failed:', error);
       await browser.close();
       throw error;
+    } finally {
+      process.removeListener('SIGINT', sigintHandler);
     }
   }
 
@@ -555,8 +549,6 @@ export class ViteJasminePreprocessor extends EventEmitter {
       };
       
       this.specDone = function(result) {
-        console.log('Spec completed:', result.fullName, '(' + result.status + ')');
-        
         this.send({
           type: 'specDone',
           id: result.id,
@@ -831,18 +823,35 @@ process.on('uncaughtException', error => {
         }
       });
 
-      // Remove the duplicate exit handler
+      let interrupted = false;
+
+      const sigintHandler = () => {
+        interrupted = true;
+        console.log('\n\n🛑 Tests aborted by user (Ctrl+C)');
+        child.kill('SIGINT');
+      };
+
+      process.once('SIGINT', sigintHandler);
+
       child.on('close', (code) => {
-        const success = code === 0;
-        resolve(success);
+        process.removeListener('SIGINT', sigintHandler);
+
+        if (interrupted) {
+          resolve(false); // Aborted by user
+        } else {
+          const success = code === 0;
+          resolve(success);
+        }
       });
 
       child.on('error', (error) => {
+        process.removeListener('SIGINT', sigintHandler);
         console.error('❌ Failed to run headless tests:', error);
         resolve(false);
       });
     });
   }
+
 
   private getContentType(ext: string): string {
     const types: Record<string, string> = {
@@ -900,6 +909,69 @@ process.on('uncaughtException', error => {
         console.error(`❌ Browser execution failed for "${browserName}": ${err.message}`);
       }
       return null;
+    }
+  }
+
+  private async openBrowser(): Promise<void> {
+    const browserName = this.config.browser || 'chrome';
+    const url = `http://localhost:${this.config.port}/index.html`;
+    
+    try {
+      const playwright = await import('playwright');
+      let browserType: any;
+      
+      switch (browserName.toLowerCase()) {
+        case 'chrome':
+        case 'chromium':
+          browserType = playwright.chromium;
+          break;
+        case 'firefox':
+          browserType = playwright.firefox;
+          break;
+        case 'webkit':
+        case 'safari':
+          browserType = playwright.webkit;
+          break;
+        default:
+          console.warn(`⚠️ Unknown browser "${browserName}", using Chrome instead`);
+          browserType = playwright.chromium;
+      }
+      
+      // Check if browser is available
+      const exePath = browserType.executablePath();
+      if (!exePath || !fs.existsSync(exePath)) {
+        console.warn(`⚠️ Browser "${browserName}" is not installed. Please open manually: ${url}`);
+        return;
+      }
+      
+      console.log(`🌐 Opening ${browserName} browser...`);
+      const browser = await browserType.launch({ 
+        headless: false,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      
+      const page = await browser.newPage();
+      await page.goto(url);
+      
+      console.log(`✅ Browser opened successfully: ${url}`);
+      
+      // Keep the browser running, but don't block the process
+      page.on('close', async () => {
+        if (!this.testCompleted) {
+          this.consoleReporter?.testsAborted('Browser window closed before completion');
+        }
+        await this.cleanup();  // stop server, free resources, etc
+        process.exit(0);
+      });
+      
+    } catch (error: any) {
+      if (error.code === 'MODULE_NOT_FOUND') {
+        console.log(`ℹ️ Playwright not installed. Please open browser manually: ${url}`);
+        console.log(`💡 Tip: Install Playwright to enable automatic browser opening:\n   npm install playwright`);
+      } else {
+        console.error(`❌ Failed to open browser: ${error.message}`);
+        console.log(`💡 Please open browser manually: ${url}`);
+      }
     }
   }
 
@@ -1059,15 +1131,20 @@ process.on('uncaughtException', error => {
       const success = await this.runHeadlessTests();
       process.exit(success ? 0 : 1);
     }
+    // Invalid configuration: headed Node.js mode
+    else if (!this.config.headless && this.config.browser === 'node') {
+      console.error('❌ Invalid configuration: Node.js runner cannot run in headed mode.');
+      process.exit(1);
+    }
     // Handle regular browser mode (headed)
     else {
       await this.startSimpleServer();
-      console.log('📊 Open the above URL in your browser to run tests');
+
       console.log('⏹️  Press Ctrl+C to stop the server');
+      await this.openBrowser();
 
       // Handle graceful shutdown
       process.on('SIGINT', async () => {
-        console.log('\n🛑 Shutting down...');
         await this.cleanup();
         process.exit(0);
       });
