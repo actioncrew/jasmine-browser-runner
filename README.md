@@ -1,253 +1,227 @@
 # TypeScript Test Runner
 
-A simple test runner for TypeScript projects using Jasmine. Run your tests in multiple environments: **in the browser** (with HTML reporter), **headless browsers** (via Playwright), or **directly in Node.js** — all without complex configuration.
+Run your Jasmine TypeScript tests in multiple environments: browsers, headless browsers, or Node.js.
 
-## What it does
+## What This Tool Does
 
-This tool compiles your TypeScript test files and runs them in various environments using Jasmine. Perfect for testing browser-specific code, CI/CD pipelines, or when you want to see your tests run in an actual browser.
+- Compiles your TypeScript test files
+- Runs Jasmine tests in your chosen environment:
+  - **Real browsers** (Chrome, Firefox, Safari) - for DOM and browser API testing
+  - **Headless browsers** - same browser environments without UI (perfect for CI/CD)
+  - **Node.js** - fastest execution for pure logic testing
 
 ## Installation
 
 ```bash
+# Core dependencies
 npm install --save-dev @actioncrew/ts-test-runner jasmine-core
-```
 
-For headless browser testing, also install Playwright:
-```bash
+# For browser testing (optional but recommended)
 npm install --save-dev playwright
 npx playwright install
 ```
 
 ## Quick Start
 
-1. **Initialize configuration**: Creates a `ts-test-runner.json` file with sensible defaults
-   ```bash
-   npx ts-test-runner init
-   ```
-
-2. **Run tests**: Choose your preferred execution mode
-   ```bash
-   # Browser mode - opens tests in browser
-   npx ts-test-runner
-   
-   # Headless browser mode - runs in background
-   npx ts-test-runner --headless
-   
-   # Node.js mode - fastest execution
-   npx ts-test-runner --headless --browser node
-   ```
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `npx ts-test-runner` | Run tests in browser (default) |
-| `npx ts-test-runner --headless` | Run tests in headless Chrome |
-| `npx ts-test-runner --headless --browser firefox` | Run tests in headless Firefox |
-| `npx ts-test-runner --headless --browser webkit` | Run tests in headless Safari/WebKit |
-| `npx ts-test-runner --headless --browser node` | Run tests directly in Node.js |
-| `npx ts-test-runner init` | Initialize test configuration file |
-| `npx ts-test-runner --config <path>` | Use custom config file |
-| `npx ts-test-runner --help` | Show help information |
-
-## Execution Modes
-
-### 1. Browser Mode (Default)
-Perfect for development and debugging:
-- Opens tests in your default browser
-- Full HTML reporter with interactive UI
-- Real-time test progress and results
-- Browser DevTools for debugging
-
+### 1. Initialize Your Project
 ```bash
-npx ts-test-runner
-# Then visit http://localhost:8888
+npx ts-test-runner init
+```
+This creates `ts-test-runner.json` with default settings based on your project.
+
+### 2. Write Jasmine Tests
+Create `.spec.ts` files in your test directory:
+
+```typescript
+// tests/calculator.spec.ts
+import { Calculator } from '../lib/calculator';
+
+describe('Calculator', () => {
+  let calc: Calculator;
+
+  beforeEach(() => {
+    calc = new Calculator();
+  });
+
+  it('should add two numbers', () => {
+    expect(calc.add(2, 3)).toBe(5);
+  });
+
+  it('should handle browser APIs', () => {
+    // This test will work in browser environments
+    if (typeof window !== 'undefined') {
+      expect(window.location).toBeDefined();
+    }
+  });
+});
 ```
 
-### 2. Headless Browser Mode
-Ideal for CI/CD and automated testing:
-- Runs tests in real browser environments without UI
-- Full browser API support (DOM, fetch, etc.)
-- Console output with progress indicators
-- Supports Chrome, Firefox, and Safari/WebKit
+### 3. Run Your Tests
 
+```bash
+# Development: Open tests in browser with visual reporter
+npx ts-test-runner
+
+# CI/CD: Run headless in Chrome
+npx ts-test-runner --headless
+
+# Fastest: Run directly in Node.js (no browser overhead)
+npx ts-test-runner --headless --browser node
+```
+
+## Execution Environments
+
+### Browser Mode (Default)
+**Best for:** Development and debugging
+```bash
+npx ts-test-runner
+```
+- Opens `http://localhost:8888` in your default browser
+- Interactive HTML test reporter
+- Full browser DevTools for debugging
+- Access to DOM, localStorage, fetch, etc.
+
+### Headless Browser Mode
+**Best for:** CI/CD and automated testing
 ```bash
 # Chrome (default)
 npx ts-test-runner --headless
 
-# Firefox
+# Test in Firefox
 npx ts-test-runner --headless --browser firefox
 
-# Safari/WebKit
+# Test in Safari/WebKit
 npx ts-test-runner --headless --browser webkit
 ```
+- Runs in real browser without UI
+- Full browser API support
+- Console output with test results
+- Great for cross-browser testing
 
-### 3. Node.js Mode
-Fastest execution for pure logic testing:
-- Direct Node.js execution
-- No browser overhead
-- Limited to Node.js APIs only
-- Best for unit tests without DOM dependencies
-
+### Node.js Mode
+**Best for:** Fast unit testing
 ```bash
 npx ts-test-runner --headless --browser node
 ```
+- Fastest execution (no browser startup)
+- Limited to Node.js APIs only
+- Perfect for testing pure TypeScript logic
+- No DOM or browser-specific APIs
 
 ## Project Structure
 
-The test runner expects this basic structure:
+The test runner expects this structure (customizable in config):
 
 ```
 your-project/
-├── projects/
-│   └── your-library/
-│       └── src/
-│           ├── lib/           # Your TypeScript source files
-│           └── tests/         # Your .spec.ts test files
-├── dist/
-│   └── .vite-jasmine-build/   # Compiled output (auto-generated)
-├── ts-test-runner.json        # Configuration (created by init)
-└── package.json               # Project metadata
+├── src/lib/                   # Your TypeScript source code
+├── src/tests/                 # Your .spec.ts test files
+├── dist/.vite-jasmine-build/  # Compiled output (auto-generated)
+├── ts-test-runner.json        # Configuration file
+└── tsconfig.json              # TypeScript configuration
 ```
 
-## Configuration
+## Configuration File
 
-The `ts-test-runner.json` file is automatically generated with your project name from `package.json`:
+After running `init`, you'll have a `ts-test-runner.json`:
 
 ```json
 {
-  "srcDir": "./projects/your-library/src/lib",
-  "testDir": "./projects/your-library/src/tests", 
-  "outDir": "./dist/.vite-jasmine-build",
-  "tsconfig": "tsconfig.json",
-  "port": 8888,
-  "browser": "chrome",
-  "headless": false,
+  "srcDir": "./src/lib",           // Your source code location  
+  "testDir": "./src/tests",        // Your test files location
+  "outDir": "./dist/.vite-jasmine-build",  // Build output
+  "tsconfig": "tsconfig.json",     // TypeScript config
+  "port": 8888,                    // Development server port
+  "browser": "chrome",             // Default browser for headless
+  "headless": false,               // Default to browser mode
   "htmlOptions": {
-    "title": "your-project-name - Vite + Jasmine Tests"
+    "title": "My Project Tests"    // Browser page title
   }
 }
-```
-
-### Advanced Configuration
-
-The configuration supports advanced options for different testing scenarios:
-
-```json
-{
-  "srcDir": "./src",
-  "testDir": "./tests",
-  "outDir": "./dist/test-build",
-  "tsconfig": "tsconfig.json",
-  "port": 8888,
-  "browser": "chrome",
-  "headless": true,
-  "viteConfig": {
-    "define": {
-      "process.env.NODE_ENV": "\"test\""
-    }
-  },
-  "viteBuildOptions": {
-    "target": "es2022",
-    "sourcemap": true,
-    "minify": false
-  },
-  "jasmineConfig": {
-    "env": {
-      "random": true,
-      "stopSpecOnExpectationFailure": false,
-      "timeout": 30000
-    }
-  },
-  "htmlOptions": {
-    "title": "My Project Tests"
-  }
-}
-```
-
-### Browser Options
-
-| Browser | Command | Requirements |
-|---------|---------|--------------|
-| Chrome | `--browser chrome` | Playwright (automatic) |
-| Firefox | `--browser firefox` | Playwright + Firefox binary |
-| Safari | `--browser webkit` | Playwright + WebKit binary |
-| Node.js | `--browser node` | None (built-in) |
-
-### Custom Config File
-
-Use a different config file:
-
-```bash
-npx ts-test-runner --config ./custom-config.json --headless
 ```
 
 ## Writing Tests
 
-Create `.spec.ts` files in your test directory:
+Your standard Jasmine `.spec.ts` files:
 
+## Environment-Specific Testing
+
+### Browser-Only Features
 ```typescript
-// tests/example.spec.ts
-import { myFunction } from '../lib/my-module';
-
-describe('My Module', () => {
-  it('should work correctly', () => {
-    expect(myFunction()).toBe('expected result');
+describe('Browser APIs', () => {
+  beforeEach(() => {
+    // Skip if not in browser
+    if (typeof window === 'undefined') {
+      pending('Browser-only test');
+    }
   });
 
-  it('should handle edge cases', () => {
-    expect(myFunction(null)).toBeNull();
+  it('should test localStorage', () => {
+    localStorage.setItem('test', 'value');
+    expect(localStorage.getItem('test')).toBe('value');
+    localStorage.removeItem('test');
   });
-});
-```
 
-### Browser-Specific Tests
-
-Test DOM interactions and browser APIs:
-
-```typescript
-describe('DOM Component', () => {
-  it('should create and manipulate elements', () => {
+  it('should test DOM manipulation', () => {
     const div = document.createElement('div');
-    div.innerHTML = '<p>Hello World</p>';
+    div.textContent = 'Hello World';
     document.body.appendChild(div);
     
-    expect(document.querySelector('p')?.textContent).toBe('Hello World');
+    expect(document.querySelector('div')?.textContent).toBe('Hello World');
     
-    // Cleanup
     document.body.removeChild(div);
-  });
-
-  it('should handle fetch API', async () => {
-    // Mock or use real HTTP requests
-    global.fetch = jasmine.createSpy().and.returnValue(
-      Promise.resolve({
-        json: () => Promise.resolve({ data: 'test' })
-      })
-    );
-
-    // Your fetch-based code here
   });
 });
 ```
 
-## Features
+### Node.js-Only Features
+```typescript
+describe('Node.js APIs', () => {
+  beforeEach(() => {
+    // Skip if in browser
+    if (typeof process === 'undefined') {
+      pending('Node.js-only test');
+    }
+  });
 
-- ✅ **Multiple Execution Modes**: Browser, headless browser, and Node.js
-- ✅ **Playwright Integration**: Real browser testing with Chrome, Firefox, Safari
-- ✅ **TypeScript Support**: Full TypeScript compilation with type checking
-- ✅ **CI/CD Ready**: Headless mode perfect for automated pipelines
-- ✅ **Source Maps**: Debug TypeScript directly in browser DevTools  
-- ✅ **Project Name Detection**: Automatically uses your package.json name
-- ✅ **Modern ES Modules**: ESM support with proper module resolution
-- ✅ **WebSocket Communication**: Real-time test progress reporting
-- ✅ **Auto Cleanup**: Automatic resource cleanup after test completion
-- ✅ **Customizable**: Flexible configuration for different project structures
+  it('should access process information', () => {
+    expect(process.version).toMatch(/^v\d+/);
+  });
+});
+```
+
+### Cross-Environment Tests
+```typescript
+describe('Universal Code', () => {
+  it('should work in any environment', () => {
+    const result = myPureFunction('input');
+    expect(result).toBe('processed input');
+  });
+
+  it('should detect environment correctly', () => {
+    const isBrowser = typeof window !== 'undefined';
+    const isNode = typeof process !== 'undefined';
+    
+    expect(isBrowser || isNode).toBe(true);
+  });
+});
+```
+
+## Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `npx ts-test-runner` | Run in browser (development mode) |
+| `npx ts-test-runner --headless` | Run in headless Chrome |
+| `npx ts-test-runner --headless --browser firefox` | Run in headless Firefox |
+| `npx ts-test-runner --headless --browser webkit` | Run in headless Safari |
+| `npx ts-test-runner --headless --browser node` | Run in Node.js (fastest) |
+| `npx ts-test-runner init` | Create configuration file |
+| `npx ts-test-runner --config custom.json` | Use custom config file |
 
 ## CI/CD Integration
 
-### GitHub Actions
-
+### GitHub Actions Example
 ```yaml
 name: Tests
 on: [push, pull_request]
@@ -256,129 +230,65 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
       
       - run: npm ci
       - run: npx playwright install --with-deps
-      - run: npx ts-test-runner --headless
+      
+      # Fast Node.js tests
+      - run: npx ts-test-runner --headless --browser node
+      
+      # Browser compatibility tests
+      - run: npx ts-test-runner --headless --browser chrome
+      - run: npx ts-test-runner --headless --browser firefox
 ```
 
-### Multi-Browser Testing
+### Performance Comparison
 
-```yaml
-strategy:
-  matrix:
-    browser: [chrome, firefox, webkit]
-steps:
-  - run: npx ts-test-runner --headless --browser ${{ matrix.browser }}
-```
-
-### Node.js Only Testing (Fastest)
-
-```yaml
-steps:
-  - run: npx ts-test-runner --headless --browser node
-```
-
-## Performance Comparison
-
-| Mode | Speed | Browser APIs | Use Case |
-|------|-------|-------------|----------|
-| Node.js | Fastest | Limited | Unit tests, pure logic |
-| Headless Chrome | Medium | Full | Integration tests, DOM testing |
-| Headless Firefox | Medium | Full | Cross-browser compatibility |
-| Browser (headed) | Slowest | Full | Development, debugging |
+| Environment | Speed | Browser APIs | Use Case |
+|-------------|-------|-------------|----------|
+| Node.js | ⚡ Fastest | ❌ None | Unit tests, pure logic |
+| Headless Chrome | 🐌 Medium | ✅ Full | Integration tests, DOM |
+| Headless Firefox | 🐌 Medium | ✅ Full | Cross-browser testing |
+| Browser (headed) | 🐌 Slowest | ✅ Full + DevTools | Development, debugging |
 
 ## Troubleshooting
 
-### Playwright Installation
-
-If headless browser tests fail:
+### "Browser not found" Error
 ```bash
-# Install all browsers
+# Install Playwright browsers
 npx playwright install
 
-# Install specific browser
+# Or install specific browser
 npx playwright install chrome
-npx playwright install firefox
-npx playwright install webkit
 ```
 
 ### Port Already in Use
-If port 8888 is busy, change it in `ts-test-runner.json`:
+Change the port in `ts-test-runner.json`:
 ```json
 {
   "port": 3000
 }
 ```
 
-### Browser Not Found
-If a browser isn't available, the runner will automatically fall back to Node.js mode:
-```
-⚠️ Browser "firefox" not available, falling back to Node.js mode
-```
+### Tests Not Found
+Verify:
+- Test files are in the `testDir` location
+- Files have `.spec.ts` extension  
+- Tests use proper Jasmine syntax
 
 ### TypeScript Compilation Errors
-Make sure your `tsconfig.json` is properly configured for your project structure.
+Check your `tsconfig.json` configuration matches your project structure.
 
-### Tests Not Found
-Verify your test files:
-- Are in the correct `testDir` location
-- Have `.spec.ts` extension
-- Export proper Jasmine test suites
+## Why Use This Tool?
 
-### WebSocket Connection Issues
-In headless mode, if WebSocket communication fails, tests will still run but progress reporting may be limited.
-
-## Examples
-
-### Basic Test
-```typescript
-describe('Calculator', () => {
-  it('adds numbers correctly', () => {
-    expect(2 + 2).toBe(4);
-  });
-});
-```
-
-### Async Test
-```typescript
-describe('API Client', () => {
-  it('fetches data', async () => {
-    const data = await fetchUserData(123);
-    expect(data.name).toBeTruthy();
-  });
-});
-```
-
-### Browser-Only Test
-```typescript
-describe('Local Storage', () => {
-  it('stores and retrieves data', () => {
-    localStorage.setItem('test', 'value');
-    expect(localStorage.getItem('test')).toBe('value');
-    localStorage.removeItem('test');
-  });
-});
-```
-
-### Cross-Environment Test
-```typescript
-describe('Environment Detection', () => {
-  it('detects runtime environment', () => {
-    if (typeof window !== 'undefined') {
-      // Browser environment
-      expect(window.location).toBeDefined();
-    } else {
-      // Node.js environment
-      expect(process.version).toBeDefined();
-    }
-  });
-});
-```
+- **vs Jest:** Better browser testing support, real browser environments
+- **vs Mocha:** Includes Jasmine framework, less configuration needed  
+- **vs Vitest:** Focuses on browser compatibility, established Jasmine ecosystem
+- **vs Karma:** Modern tooling, TypeScript-first, simpler setup
 
 ## License
 
