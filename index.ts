@@ -457,8 +457,10 @@ export class ViteJasminePreprocessor extends EventEmitter {
       console.log(`📦 Building ${Object.keys(input).length} files...`);
       await viteBuild(viteConfig);
 
-      // Generate HTML for both modes - needed for headless browser too
-      this.generateHtmlFile();
+      // Only generate HTML if browser mode is not node
+      if (!(this.config.headless && this.config.browser === 'node')) {
+        this.generateHtmlFile();
+      }
 
       // Generate test runner only for Node.js headless mode
       if (this.config.headless && this.config.browser === 'node') {
