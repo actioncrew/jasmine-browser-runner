@@ -111,12 +111,23 @@ export class ConsoleReporter {
     this.print('⏱️  Finished in ' + totalTime.toFixed(3) + ' ' + this.plural('second', totalTime));
     this.print('\n\n');
 
-    if (result.overallStatus === 'complete' && this.failureCount === 0 && this.pendingSpecs.length === 0) {
-      this.print(this.colored('green', '✅ All specs passed!\n'));
-    } else if (result.overallStatus === 'complete' && this.failureCount === 0) {
-      this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', `(with ${this.pendingSpecs.length} pending)\n`));
+    if (result.overallStatus === 'passed') {
+      if (this.pendingSpecs.length === 0) {
+        this.print(this.colored('green', '✅ All specs passed!\n'));
+      } else {
+        this.print(
+          this.colored('green', '✅ All specs passed! ') +
+          this.colored('yellow', `(with ${this.pendingSpecs.length} pending)\n`)
+        );
+      }
+    } else if (result.overallStatus === 'failed') {
+      this.print(
+        this.colored('red', `❌ ${this.failureCount} ${this.plural('spec', this.failureCount)} failed\n`)
+      );
+    } else if (result.overallStatus === 'incomplete') {
+      this.print(this.colored('red', '⚠️ Tests could not be run (incomplete)\n'));
     } else {
-      this.print(this.colored('red', `❌ ${this.failureCount} ${this.plural('spec', this.failureCount)} failed\n`));
+      this.print(this.colored('red', `⚠️ Unknown test status: ${result.overallStatus}\n`));
     }
 
     return this.failureCount;
@@ -172,6 +183,8 @@ export interface ViteJasmineConfig {
   };
 }
 
+const norm = (p: string) => p.replace(/\\/g, '/');
+
 export class ViteJasminePreprocessor extends EventEmitter {
   private config: ViteJasmineConfig;
   private server: ReturnType<typeof createServer> | null = null;
@@ -184,15 +197,15 @@ export class ViteJasminePreprocessor extends EventEmitter {
   constructor(config: ViteJasmineConfig) {
     super();
     // sensible defaults
-    const cwd = process.cwd();
+    const cwd = norm(process.cwd());
     this.config = {
       ...config,
       browser: config.browser ?? 'chrome',
       port: config.port ?? 8888,
       headless: config.headless ?? false,
-      srcDir: config.srcDir ?? cwd,
-      testDir: config.testDir ?? cwd,
-      outDir: config.outDir ?? path.join(cwd, 'dist/.vite-jasmine-build'),
+      srcDir: norm(config.srcDir) ?? cwd,
+      testDir: norm(config.testDir) ?? cwd,
+      outDir: norm(config.outDir) ?? norm(path.join(cwd, 'dist/.vite-jasmine-build')),
     };
   }
 
@@ -306,7 +319,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
     page.on('requestfailed', (request: any) => console.error('❌ Request failed:', request.url(), request.failure()?.errorText));
 
     console.log('🌐 Navigating to test page...');
-    await page.goto(`http://localhost:${this.config.port}/index.html`, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.goto(`http://localhost:${this.config.port}/index.html`, { waitUntil: 'networkidle0', timeout: 120000 });
 
     try {
       // Wait for tests to finish
@@ -382,7 +395,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
           if (Array.isArray(pathArray) && pathArray.length > 0) {
             const cleanAlias = alias.replace(/\/\*$/, '');
             const cleanPath = (pathArray[0] as string).replace(/\/\*$/, '');
-            aliases[cleanAlias] = path.resolve(baseUrl, cleanPath);
+            aliases[cleanAlias] = norm(path.resolve(baseUrl, cleanPath));
           }
         }
       }
@@ -604,7 +617,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
 </body>
 </html>`;
 
-    const htmlPath = path.join(htmlDir, 'index.html');
+    const htmlPath = norm(path.join(htmlDir, 'index.html'));
     fs.writeFileSync(htmlPath, htmlContent);
     console.log('📄 Generated test HTML with WebSocket forwarding:', htmlPath);
   }
@@ -629,136 +642,8 @@ export class ViteJasminePreprocessor extends EventEmitter {
       .join('\n');
 
     const runnerContent = `// Auto-generated headless Jasmine test runner
-import jasmineCore from 'jasmine-core';
+import jasmineCore, { ConsoleReporter } from '.';
 import util from 'util';
-
-// Console Reporter class
-export class ConsoleReporter {
-  print;
-  showColors;
-  specCount;
-  executableSpecCount;
-  failureCount;
-  failedSpecs;
-  pendingSpecs;
-  ansi;
-
-  constructor() {
-    this.print = (...args) => process.stdout.write(util.format(...args));
-    this.showColors = true;
-    this.specCount = 0;
-    this.executableSpecCount = 0;
-    this.failureCount = 0;
-    this.failedSpecs = [];
-    this.pendingSpecs = [];
-    this.ansi = {
-      green: '\\x1B[32m',
-      red: '\\x1B[31m',
-      yellow: '\\x1B[33m',
-      none: '\\x1B[0m'
-    };
-  }
-
-  jasmineStarted(options) {
-    this.specCount = 0;
-    this.executableSpecCount = 0;
-    this.failureCount = 0;
-    this.failedSpecs = [];
-    this.pendingSpecs = [];
-    this.print('🏃 Executing tests...\\n\\n');
-  }
-
-  specDone(result) {
-    this.specCount++;
-    switch (result.status) {
-      case 'passed':
-        this.executableSpecCount++;
-        this.print(this.colored('green', '.'));
-        break;
-      case 'failed':
-        this.failureCount++;
-        this.failedSpecs.push(result);
-        this.executableSpecCount++;
-        this.print(this.colored('red', 'F'));
-        break;
-      case 'pending':
-        this.pendingSpecs.push(result);
-        this.executableSpecCount++;
-        this.print(this.colored('yellow', '*'));
-        break;
-    }
-  }
-
-  jasmineDone(result) {
-    const totalTime = result ? result.totalTime / 1000 : 0;
-    const failedSpecsPresent = this.failedSpecs.length > 0;
-    const pendingSpecsPresent = this.pendingSpecs.length > 0;
-
-    // Display failures
-    if (failedSpecsPresent) {
-      this.print('\\n\\n❌ Failures:\\n\\n');
-      this.failedSpecs.forEach((spec, i) => {
-        this.print(\`  \${i + 1}) \${spec.fullName}\\n\`);
-        if (spec.failedExpectations?.length > 0) {
-          spec.failedExpectations.forEach((expectation) => {
-            this.print(\`     \${this.colored('red', expectation.message)}\\n\`);
-          });
-        }
-      });
-    }
-
-    // Display pending specs
-    if (pendingSpecsPresent) {
-      this.print(\`\${failedSpecsPresent ? '\\n': '\\n\\n'}⏸️  Pending specs:\\n\\n\`);
-      this.pendingSpecs.forEach((spec, i) => {
-        this.print(\`  \${i + 1}) \${spec.fullName}\\n\`);
-        if (spec.pendingReason) {
-          this.print(\`     \${this.colored('yellow', spec.pendingReason)}\\n\`);
-        }
-      });
-    }
-
-    // Display summary
-    this.print(\`\${failedSpecsPresent || pendingSpecsPresent ? '\\n': '\\n\\n'}📊 Summary: \`);
-
-    const specsText = this.executableSpecCount + ' ' + this.plural('spec', this.executableSpecCount);
-    const failuresText = this.failureCount + ' ' + this.plural('failure', this.failureCount);
-    const pendingText = this.pendingSpecs.length + ' ' + this.plural('pending spec', this.pendingSpecs.length);
-    
-    this.print(specsText);
-    if (this.failureCount > 0) {
-      this.print(', ' + this.colored('red', failuresText));
-    } else {
-      this.print(', ' + failuresText);
-    }
-    if (this.pendingSpecs.length > 0) {
-      this.print(', ' + this.colored('yellow', pendingText));
-    }
-    
-    this.print('\\n');
-    this.print('⏱️  Finished in ' + totalTime.toFixed(3) + ' ' + this.plural('second', totalTime));
-    this.print('\\n\\n');
-
-    // Final status
-    if (result.overallStatus === 'complete' && this.failureCount === 0 && this.pendingSpecs.length === 0) {
-      this.print(this.colored('green', '✅ All specs passed!\n'));
-    } else if (result.overallStatus === 'complete' && this.failureCount === 0) {
-      this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', \`(with \${this.pendingSpecs.length} pending)\n\`));
-    } else {
-      this.print(this.colored('red', \`❌ \${this.failureCount} \${this.plural('spec', this.failureCount)} failed\n\`));
-    }
-
-    return this.failureCount;
-  }
-
-  colored(color, str) {
-    return this.showColors ? this.ansi[color] + str + this.ansi.none : str;
-  }
-
-  plural(str, count) {
-    return count === 1 ? str : str + 's';
-  }
-}
 
 // Initialize Jasmine
 const jasmineRequire = jasmineCore;
@@ -805,13 +690,13 @@ process.on('uncaughtException', error => {
 })();
 `;
 
-    fs.writeFileSync(path.join(outDir, 'test-runner.js'), runnerContent);
-    console.log('🤖 Generated headless test runner:', path.join(outDir, 'test-runner.js'));
+    fs.writeFileSync(norm(path.join(outDir, 'test-runner.js')), runnerContent);
+    console.log('🤖 Generated headless test runner:', norm(path.join(outDir, 'test-runner.js')));
   }
 
   private async runHeadlessTests(): Promise<boolean> {
     return new Promise((resolve) => {
-      const testRunnerPath = path.join(this.config.outDir, 'test-runner.js');
+      const testRunnerPath = norm(path.join(this.config.outDir, 'test-runner.js'));
 
       if (!fs.existsSync(testRunnerPath)) {
         console.error('❌ Test runner not found. Build may have failed.');
@@ -950,7 +835,7 @@ process.on('uncaughtException', error => {
       
       console.log(`🌐 Opening ${browserName} browser...`);
       const browser = await browserType.launch({ 
-        headless: false,
+        headless: this.config.headless,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
       
@@ -1019,10 +904,10 @@ process.on('uncaughtException', error => {
     const port = this.config.port!;
     const outDir = this.config.outDir;
 
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
+    const __filename = norm(fileURLToPath(import.meta.url));
+    const __dirname = norm(path.dirname(__filename));
 
-    const vendorDir = path.join(__dirname, '../vendor');
+    const vendorDir = norm(path.join(__dirname, '../vendor'));
     
     this.server = createServer((req, res) => {
       let filePath = req.url === '/' ? '/index.html' : req.url!;
@@ -1044,12 +929,12 @@ process.on('uncaughtException', error => {
       if (filePath.startsWith('/vendor/')) {
         // Strip leading slash and serve relative to vendorDir
         const relativePath = filePath.replace(/^\/vendor\//, '');
-        resolvedPath = path.join(vendorDir, relativePath);
+        resolvedPath = norm(path.join(vendorDir, relativePath));
       } else {
-        resolvedPath = path.join(outDir, filePath);
+        resolvedPath = norm(path.join(outDir, filePath));
       }
 
-      resolvedPath = path.normalize(resolvedPath);
+      resolvedPath = norm(path.normalize(resolvedPath));
 
       if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
         const ext = extname(resolvedPath);
@@ -1098,9 +983,9 @@ process.on('uncaughtException', error => {
     console.log(`🚀 Starting Vite + Jasmine Test ${this.config.headless ? 'Runner (Headless)' : 'Server'}...`);
 
     // Ensure absolute paths
-    this.config.outDir = path.resolve(this.config.outDir);
-    this.config.srcDir = path.resolve(this.config.srcDir);
-    this.config.testDir = path.resolve(this.config.testDir);
+    this.config.outDir = norm(path.resolve(this.config.outDir));
+    this.config.srcDir = norm(path.resolve(this.config.srcDir));
+    this.config.testDir = norm(path.resolve(this.config.testDir));
 
     if (!fs.existsSync(this.config.outDir)) {
       fs.mkdirSync(this.config.outDir, { recursive: true });
@@ -1174,7 +1059,7 @@ process.on('uncaughtException', error => {
 }
 
 function ensureConfigExists(configPath?: string): ViteJasmineConfig {
-  const jsonPath = configPath || path.resolve(process.cwd(), 'ts-test-runner.json');
+  const jsonPath = norm(configPath || path.resolve(process.cwd(), 'ts-test-runner.json'));
 
   if (fs.existsSync(jsonPath)) {
     try {
@@ -1186,11 +1071,11 @@ function ensureConfigExists(configPath?: string): ViteJasmineConfig {
   }
 
   // Create default config if it does not exist
-  const cwd = process.cwd();
+  const cwd = norm(process.cwd());
   const defaultConfig: ViteJasmineConfig = {
-    srcDir: path.join(cwd, 'src'),
-    testDir: path.join(cwd, 'tests'),
-    outDir: path.join(cwd, 'dist/.vite-jasmine-build'),
+    srcDir: cwd,
+    testDir: cwd,
+    outDir: norm(path.join(cwd, 'dist/.vite-jasmine-build')),
     browser: 'chrome',
     headless: false,
     port: 8888,
@@ -1199,7 +1084,7 @@ function ensureConfigExists(configPath?: string): ViteJasmineConfig {
       sourcemap: true,
       minify: false,
       preserveModules: true,
-      preserveModulesRoot: path.join(cwd, 'src')
+      preserveModulesRoot: cwd
     },
     jasmineConfig: {
       env: { stopSpecOnExpectationFailure: false, random: true, timeout: 120000 },
@@ -1209,8 +1094,7 @@ function ensureConfigExists(configPath?: string): ViteJasmineConfig {
     htmlOptions: {
       title: 'Vite + Jasmine Tests',
       includeSourceScripts: true,
-      includeSpecScripts: true,
-      bootScript: 'boot0'
+      includeSpecScripts: true
     }
   };
 
@@ -1230,17 +1114,18 @@ export function loadViteJasmineBrowserConfig(configPath?: string): ViteJasmineCo
 }
 
 export function initViteJasmineConfig(configPath?: string) {
-  const jsonPath = configPath || path.resolve(process.cwd(), 'ts-test-runner.json');
+  const jsonPath = norm(configPath || path.resolve(process.cwd(), 'ts-test-runner.json'));
 
   if (fs.existsSync(jsonPath)) {
     console.log(`⚠️ Config already exists at ${jsonPath}`);
     return;
   }
 
+  const cwd = norm(process.cwd());
   const defaultConfig: ViteJasmineConfig = {
-    srcDir: process.cwd(),
-    testDir: process.cwd(),
-    outDir: path.resolve(process.cwd(), 'dist/.vite-jasmine-build'),
+    srcDir: cwd,
+    testDir: cwd,
+    outDir: norm(path.resolve(cwd, 'dist/.vite-jasmine-build')),
     browser: 'chrome',
     headless: false,
     port: 8888,
@@ -1260,15 +1145,28 @@ export function createViteJasmineRunner(config: ViteJasmineConfig): ViteJasmineP
 // CLI entry point
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   (async () => {
-    const initOnly = process.argv.includes('init');
+    const args = process.argv.slice(2);
+    const initOnly = args.includes('init');
+    const headless = args.includes('--headless');
+    const browserIndex = args.findIndex(a => a === '--browser');
+    let browserName: string = 'chrome';
+    if (browserIndex !== -1 && browserIndex + 1 < args.length) {
+      browserName = args[browserIndex + 1];
+    }
 
     if (initOnly) {
       initViteJasmineConfig();
-      process.exit(0);
+      return;
     }
 
     try {
-      const config = loadViteJasmineBrowserConfig();
+      let config = loadViteJasmineBrowserConfig();
+      config = { 
+        ...config,
+        headless: headless ? true : config.headless,
+        browser: browserIndex !== -1 && browserIndex + 1 < args.length ? browserName : config.browser
+      };
+      
       const runner = createViteJasmineRunner(config);
       await runner.start();
     } catch (error) {
