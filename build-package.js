@@ -1,7 +1,13 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const mainPackage = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const mainPackage = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')
+);
 
 const distPackage = {
   name: mainPackage.name,
@@ -13,7 +19,9 @@ const distPackage = {
   files: [
     'README.md',
     'LICENSE',
+    'package.json',
     'bin/',
+    'lib/',
     'vendor/'
   ],
   keywords: mainPackage.keywords || [],
@@ -24,6 +32,6 @@ const distPackage = {
 };
 
 fs.writeFileSync(
-  path.join('dist/ts-test-runner/', 'package.json'),
+  path.join(__dirname, 'dist/ts-test-runner/package.json'),
   JSON.stringify(distPackage, null, 2)
 );

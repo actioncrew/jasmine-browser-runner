@@ -17,7 +17,6 @@ Run your Jasmine TypeScript tests in multiple environments: browsers, headless b
 npm install --save-dev @actioncrew/ts-test-runner
 
 # For browser testing (optional but recommended)
-npm install --save-dev playwright
 npx playwright install
 ```
 

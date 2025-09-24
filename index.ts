@@ -3,13 +3,14 @@ import path from 'path';
 import fs from 'fs';
 import http from 'http';
 import util from 'util';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { glob } from 'glob';
 import { EventEmitter } from 'events';
 import { createServer } from 'http';
 import { extname } from 'path';
 import { spawn } from 'child_process';
 import { WebSocketServer, WebSocket } from 'ws';
+import type * as PlayWright from 'playwright';
 
 export class ConsoleReporter {
   private print: (...args: any[]) => void;
@@ -179,7 +180,6 @@ export interface ViteJasmineConfig {
     title?: string;
     includeSourceScripts?: boolean;
     includeSpecScripts?: boolean;
-    bootScript?: 'boot0' | 'boot1';
   };
 }
 
@@ -193,6 +193,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
   private consoleReporter: ConsoleReporter | null = null;
   private testCompleted: boolean = false;
   private testSuccess: boolean = false;
+  private playwright: typeof PlayWright | null = null;
 
   constructor(config: ViteJasmineConfig) {
     super();
@@ -205,7 +206,7 @@ export class ViteJasminePreprocessor extends EventEmitter {
       headless: config.headless ?? false,
       srcDir: norm(config.srcDir) ?? cwd,
       testDir: norm(config.testDir) ?? cwd,
-      outDir: norm(config.outDir) ?? norm(path.join(cwd, 'dist/.vite-jasmine-build')),
+      outDir: norm(config.outDir) ?? norm(path.join(cwd, 'dist/.vite-jasmine-build/')),
     };
   }
 
@@ -642,24 +643,10 @@ export class ViteJasminePreprocessor extends EventEmitter {
       .join('\n');
 
     const runnerContent = `// Auto-generated headless Jasmine test runner
-import jasmineCore, { ConsoleReporter } from '.';
-import util from 'util';
-
-// Initialize Jasmine
-const jasmineRequire = jasmineCore;
-const jasmine = jasmineRequire.core(jasmineRequire);
-const env = jasmine.getEnv();
-Object.assign(globalThis, jasmineRequire.interface(jasmine, env));
-globalThis.jasmine = jasmine;
-
-// Configure environment
-env.configure({
-  random: ${this.config.jasmineConfig?.env?.random ?? true},
-  stopOnSpecFailure: ${this.config.jasmineConfig?.env?.stopSpecOnExpectationFailure ?? false}
-});
-
-env.clearReporters();
-env.addReporter(new ConsoleReporter());
+import * as path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+const __filename = "${fileURLToPath(import.meta.url).replace(/\\/g, '/')}";
+const __dirname = path.dirname(__filename).replace(/\\\\/g, '/');
 
 // Global error handlers
 process.on('unhandledRejection', error => {
@@ -674,6 +661,25 @@ process.on('uncaughtException', error => {
 
 // Import and execute specs
 (async function() {
+  const { ConsoleReporter } = await import(pathToFileURL(path.join(__dirname, '../lib/index.js')).href);
+  const jasmineCore = await import(pathToFileURL(path.join(__dirname, '../vendor/jasmine-core/lib/jasmine-core/jasmine.js')).href);
+
+  // Initialize Jasmine
+  const jasmineRequire = jasmineCore.default;
+  const jasmine = jasmineRequire.core(jasmineRequire);
+  const env = jasmine.getEnv();
+  Object.assign(globalThis, jasmineRequire.interface(jasmine, env));
+  globalThis.jasmine = jasmine;
+  
+  // Configure environment
+  env.configure({
+    random: ${this.config.jasmineConfig?.env?.random ?? true},
+    stopOnSpecFailure: ${this.config.jasmineConfig?.env?.stopSpecOnExpectationFailure ?? false}
+  });
+
+  env.clearReporters();
+  env.addReporter(new ConsoleReporter());
+
   try {
     ${imports}
     await env.execute();
@@ -758,13 +764,20 @@ process.on('uncaughtException', error => {
     return types[ext] || 'application/octet-stream';
   }
 
+  private getPlaywright(): typeof PlayWright {
+    if (!this.playwright) {
+      this.playwright = require('playwright');
+    }
+    return this.playwright!;
+  }
+
   private async checkBrowser(browserName: string): Promise<any | null> {
     let browser: any = null;
 
     try {
       // Try to dynamically import Playwright
-      const playwright = await import('playwright');
-
+      const playwright = this.getPlaywright();
+      
       switch (browserName.toLowerCase()) {
         case 'chromium':
         case 'chrome':
@@ -806,7 +819,7 @@ process.on('uncaughtException', error => {
     const url = `http://localhost:${this.config.port}/index.html`;
     
     try {
-      const playwright = await import('playwright');
+      const playwright = this.getPlaywright();
       let browserType: any;
       
       switch (browserName.toLowerCase()) {
@@ -1075,7 +1088,7 @@ function ensureConfigExists(configPath?: string): ViteJasmineConfig {
   const defaultConfig: ViteJasmineConfig = {
     srcDir: cwd,
     testDir: cwd,
-    outDir: norm(path.join(cwd, 'dist/.vite-jasmine-build')),
+    outDir: norm(path.join(cwd, 'dist/.vite-jasmine-build/')),
     browser: 'chrome',
     headless: false,
     port: 8888,
@@ -1125,7 +1138,7 @@ export function initViteJasmineConfig(configPath?: string) {
   const defaultConfig: ViteJasmineConfig = {
     srcDir: cwd,
     testDir: cwd,
-    outDir: norm(path.resolve(cwd, 'dist/.vite-jasmine-build')),
+    outDir: norm(path.resolve(cwd, 'dist/.vite-jasmine-build/')),
     browser: 'chrome',
     headless: false,
     port: 8888,
@@ -1160,7 +1173,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     }
 
     try {
-      let config = loadViteJasmineBrowserConfig();
+      let config = loadViteJasmineBrowserConfig('ts-test-runner.json');
       config = { 
         ...config,
         headless: headless ? true : config.headless,
