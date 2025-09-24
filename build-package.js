@@ -13,7 +13,8 @@ const distPackage = {
   files: [
     'README.md',
     'LICENSE',
-    'bin/'
+    'bin/',
+    'vendor/'
   ],
   keywords: mainPackage.keywords || [],
   author: mainPackage.author,

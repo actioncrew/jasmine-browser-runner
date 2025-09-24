@@ -1,4 +1,4 @@
-import { build as viteBuild, type InlineConfig } from 'vite';
+import { build as viteBuild, InlineConfig } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import http from 'http';
@@ -111,9 +111,9 @@ export class ConsoleReporter {
     this.print('⏱️  Finished in ' + totalTime.toFixed(3) + ' ' + this.plural('second', totalTime));
     this.print('\n\n');
 
-    if (this.failureCount === 0 && this.pendingSpecs.length === 0) {
+    if (result.overallStatus === 'complete' && this.failureCount === 0 && this.pendingSpecs.length === 0) {
       this.print(this.colored('green', '✅ All specs passed!\n'));
-    } else if (this.failureCount === 0) {
+    } else if (result.overallStatus === 'complete' && this.failureCount === 0) {
       this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', `(with ${this.pendingSpecs.length} pending)\n`));
     } else {
       this.print(this.colored('red', `❌ ${this.failureCount} ${this.plural('spec', this.failureCount)} failed\n`));
@@ -183,11 +183,16 @@ export class ViteJasminePreprocessor extends EventEmitter {
 
   constructor(config: ViteJasmineConfig) {
     super();
-    this.config = { 
-      browser: 'chrome', 
-      port: 8888, 
-      headless: false, 
-      ...config 
+    // sensible defaults
+    const cwd = process.cwd();
+    this.config = {
+      ...config,
+      browser: config.browser ?? 'chrome',
+      port: config.port ?? 8888,
+      headless: config.headless ?? false,
+      srcDir: config.srcDir ?? cwd,
+      testDir: config.testDir ?? cwd,
+      outDir: config.outDir ?? path.join(cwd, 'dist/.vite-jasmine-build'),
     };
   }
 
@@ -477,11 +482,11 @@ export class ViteJasminePreprocessor extends EventEmitter {
 <head>
   <meta charset="UTF-8">
   <title>${this.config.htmlOptions?.title || 'Vite + Jasmine Tests'}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jasmine-core@5.10.0/lib/jasmine-core/jasmine.css">
-  <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.10.0/lib/jasmine-core/jasmine.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.10.0/lib/jasmine-core/jasmine-html.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.10.0/lib/jasmine-core/boot0.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.10.0/lib/jasmine-core/boot1.js"></script>
+  <link rel="stylesheet" href="/vendor/jasmine-core/lib/jasmine-core/jasmine.css">
+  <script src="/vendor/jasmine-core/lib/jasmine-core/jasmine.js"></script>
+  <script src="/vendor/jasmine-core/lib/jasmine-core/jasmine-html.js"></script>
+  <script src="/vendor/jasmine-core/lib/jasmine-core/boot0.js"></script>
+  <script src="/vendor/jasmine-core/lib/jasmine-core/boot1.js"></script>
   <script>
     function WebSocketEventForwarder() {
       this.ws = null;
@@ -735,12 +740,12 @@ export class ConsoleReporter {
     this.print('\\n\\n');
 
     // Final status
-    if (this.failureCount === 0 && this.pendingSpecs.length === 0) {
-      this.print(this.colored('green', '✅ All specs passed!\\n'));
-    } else if (this.failureCount === 0) {
-      this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', '(with ' + this.pendingSpecs.length + ' pending)\\n'));
+    if (result.overallStatus === 'complete' && this.failureCount === 0 && this.pendingSpecs.length === 0) {
+      this.print(this.colored('green', '✅ All specs passed!\n'));
+    } else if (result.overallStatus === 'complete' && this.failureCount === 0) {
+      this.print(this.colored('green', '✅ All specs passed! ') + this.colored('yellow', \`(with \${this.pendingSpecs.length} pending)\n\`));
     } else {
-      this.print(this.colored('red', '❌ ' + this.failureCount + ' ' + this.plural('spec', this.failureCount) + ' failed\\n'));
+      this.print(this.colored('red', \`❌ \${this.failureCount} \${this.plural('spec', this.failureCount)} failed\n\`));
     }
 
     return this.failureCount;
@@ -893,10 +898,9 @@ process.on('uncaughtException', error => {
       }
 
       // Check if the executable exists
-      const exePath = browser.executablePath();
-      if (!exePath || !fs.existsSync(exePath)) {
+      if (!browser) {
         console.error(`❌ Browser "${browserName}" is not installed.`);
-        console.log(`💡 Tip: Install it by running:\n   npx playwright install ${browserName.toLowerCase()}`);
+        console.log(`💡 Tip: Install it by running: npx playwright install ${browserName.toLowerCase()}`);
         return null;
       }
 
@@ -938,9 +942,9 @@ process.on('uncaughtException', error => {
       }
       
       // Check if browser is available
-      const exePath = browserType.executablePath();
-      if (!exePath || !fs.existsSync(exePath)) {
-        console.warn(`⚠️ Browser "${browserName}" is not installed. Please open manually: ${url}`);
+      if (!browserType) {
+        console.warn(`❌ Browser "${browserName}" is not installed.`);
+        console.log(`💡 Tip: Install it by running: npx playwright install ${browserName.toLowerCase()}`);
         return;
       }
       
@@ -1015,9 +1019,14 @@ process.on('uncaughtException', error => {
     const port = this.config.port!;
     const outDir = this.config.outDir;
 
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+
+    const vendorDir = path.join(__dirname, '../vendor');
+    
     this.server = createServer((req, res) => {
       let filePath = req.url === '/' ? '/index.html' : req.url!;
-      filePath = path.join(outDir, decodeURIComponent(filePath));
+      filePath = decodeURIComponent(filePath);
 
       // Handle CORS preflight requests
       if (req.method === 'OPTIONS') {
@@ -1030,13 +1039,25 @@ process.on('uncaughtException', error => {
         return;
       }
 
-      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-        const ext = extname(filePath);
+      let resolvedPath: string;
+
+      if (filePath.startsWith('/vendor/')) {
+        // Strip leading slash and serve relative to vendorDir
+        const relativePath = filePath.replace(/^\/vendor\//, '');
+        resolvedPath = path.join(vendorDir, relativePath);
+      } else {
+        resolvedPath = path.join(outDir, filePath);
+      }
+
+      resolvedPath = path.normalize(resolvedPath);
+
+      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
+        const ext = extname(resolvedPath);
         res.writeHead(200, {
           'Content-Type': this.getContentType(ext),
           'Access-Control-Allow-Origin': '*'
         });
-        res.end(fs.readFileSync(filePath));
+        res.end(fs.readFileSync(resolvedPath));
       } else {
         res.writeHead(404);
         res.end('Not found');
@@ -1152,30 +1173,100 @@ process.on('uncaughtException', error => {
   }
 }
 
+function ensureConfigExists(configPath?: string): ViteJasmineConfig {
+  const jsonPath = configPath || path.resolve(process.cwd(), 'ts-test-runner.json');
+
+  if (fs.existsSync(jsonPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+    } catch (error) {
+      console.error('❌ Failed to parse existing ts-test-runner.json', error);
+      return {} as ViteJasmineConfig;
+    }
+  }
+
+  // Create default config if it does not exist
+  const cwd = process.cwd();
+  const defaultConfig: ViteJasmineConfig = {
+    srcDir: path.join(cwd, 'src'),
+    testDir: path.join(cwd, 'tests'),
+    outDir: path.join(cwd, 'dist/.vite-jasmine-build'),
+    browser: 'chrome',
+    headless: false,
+    port: 8888,
+    viteBuildOptions: {
+      target: 'es2022',
+      sourcemap: true,
+      minify: false,
+      preserveModules: true,
+      preserveModulesRoot: path.join(cwd, 'src')
+    },
+    jasmineConfig: {
+      env: { stopSpecOnExpectationFailure: false, random: true, timeout: 120000 },
+      browser: { name: 'chrome', headless: false },
+      reporter: 'console'
+    },
+    htmlOptions: {
+      title: 'Vite + Jasmine Tests',
+      includeSourceScripts: true,
+      includeSpecScripts: true,
+      bootScript: 'boot0'
+    }
+  };
+
+  try {
+    fs.writeFileSync(jsonPath, JSON.stringify(defaultConfig, null, 2));
+    console.log(`🆕 Created default test runner config at ${jsonPath}`);
+  } catch (error) {
+    console.error('❌ Failed to create default ts-test-runner.json', error);
+  }
+
+  return defaultConfig;
+}
+
+// --- Update your CLI loader ---
+export function loadViteJasmineBrowserConfig(configPath?: string): ViteJasmineConfig {
+  return ensureConfigExists(configPath);
+}
+
+export function initViteJasmineConfig(configPath?: string) {
+  const jsonPath = configPath || path.resolve(process.cwd(), 'ts-test-runner.json');
+
+  if (fs.existsSync(jsonPath)) {
+    console.log(`⚠️ Config already exists at ${jsonPath}`);
+    return;
+  }
+
+  const defaultConfig: ViteJasmineConfig = {
+    srcDir: process.cwd(),
+    testDir: process.cwd(),
+    outDir: path.resolve(process.cwd(), 'dist/.vite-jasmine-build'),
+    browser: 'chrome',
+    headless: false,
+    port: 8888,
+    viteBuildOptions: { target: 'es2022', sourcemap: true, minify: false },
+    jasmineConfig: { env: { random: true, stopSpecOnExpectationFailure: false } }
+  };
+
+  fs.writeFileSync(jsonPath, JSON.stringify(defaultConfig, null, 2));
+  console.log(`✅ Generated default Vite Jasmine config at ${jsonPath}`);
+}
+
 // Factory function
 export function createViteJasmineRunner(config: ViteJasmineConfig): ViteJasminePreprocessor {
   return new ViteJasminePreprocessor(config);
 }
 
-export function loadViteJasmineBrowserConfig(configPath?: string): ViteJasmineConfig {
-  const jsonPath = configPath || path.resolve(process.cwd(), 'ts-test-runner.json');
-  
-  if (!fs.existsSync(jsonPath)) {
-    console.warn('⚠️ ts-test-runner.json not found, using defaults');
-    return {} as ViteJasmineConfig;
-  }
-  
-  try {
-    return JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-  } catch (error) {
-    console.error('❌ Failed to parse ts-test-runner.json', error);
-    return {} as ViteJasmineConfig;
-  }
-}
-
 // CLI entry point
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   (async () => {
+    const initOnly = process.argv.includes('init');
+
+    if (initOnly) {
+      initViteJasmineConfig();
+      process.exit(0);
+    }
+
     try {
       const config = loadViteJasmineBrowserConfig();
       const runner = createViteJasmineRunner(config);

@@ -1,5 +1,6 @@
 const path = require('path');
 const { defineConfig } = require('vite');
+const copy = require('rollup-plugin-copy');
 
 const EXTERNALS = [
   'assert', 'async_hooks', 'buffer', 'child_process', 'cluster', 'console',
@@ -12,7 +13,18 @@ const EXTERNALS = [
 ];
 
 module.exports = defineConfig({
-  plugins: [],
+  plugins: [
+    copy({
+      targets: [
+        { 
+          src: 'node_modules/jasmine-core/**/*', 
+          dest: 'dist/ts-test-runner/vendor' 
+        }
+      ],
+      hook: 'writeBundle',
+      flatten: false
+    })
+  ],
   build: {
     target: 'node22',
     outDir: 'dist/ts-test-runner/',
@@ -24,13 +36,12 @@ module.exports = defineConfig({
       input: path.resolve(__dirname, './index.ts'),
       output: {
         entryFileNames: 'bin/ts-test-runner',
-        format: 'cjs',
+        format: 'es',
         banner: `#!/usr/bin/env node`,
         inlineDynamicImports: true,
         manualChunks: undefined
       },
       external: (id: string) => {
-        console.log(id);
         if (id.startsWith('node:')) return true;
         if (EXTERNALS.includes(id)) return true;
         return false;
