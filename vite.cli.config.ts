@@ -13,7 +13,8 @@ const EXTERNALS = [
   'process', 'punycode', 'querystring', 'readline', 'repl', 'stream',
   'string_decoder', 'timers', 'tls', 'trace_events', 'tty', 'url', 'util',
   'v8', 'vm', 'zlib', 'worker_threads', 'ws', 'fsevents', 'chromium-bidi', 'glob',
-  'vite', 'rollup', 'typescript', 'module-alias', 'playwright', 'playwright-core'
+  'vite', 'rollup', 'typescript', 'module-alias', 'playwright', 'playwright-core', 
+  'fdir', 'picomatch'
 ];
 
 export default defineConfig({
@@ -21,7 +22,9 @@ export default defineConfig({
     copy({
       targets: [
         { src: 'node_modules/jasmine-core/**/*', dest: 'dist/ts-test-runner/vendor' },
-        { src: 'node_modules/esbuild/**/*', dest: 'dist/ts-test-runner/vendor' },
+        { src: 'node_modules/vite/**/*', dest: 'dist/ts-test-runner/vendor' },
+        { src: 'node_modules/fdir/**/*', dest: 'dist/ts-test-runner/vendor' },
+        { src: 'node_modules/picomatch/**/*', dest: 'dist/ts-test-runner/vendor' },
         { src: 'node_modules/playwright-core/**/*', dest: 'dist/ts-test-runner/vendor' },
         { src: 'node_modules/playwright/**/*', dest: 'dist/ts-test-runner/vendor' },
         { src: 'node_modules/module-alias/**/*', dest: 'dist/ts-test-runner/vendor' }
@@ -42,7 +45,7 @@ export default defineConfig({
     minify: false,
     chunkSizeWarningLimit: 5000,
     rollupOptions: {
-      input: path.resolve(__dirname, './index.ts'),
+      input: path.resolve(__dirname, './src/index.ts'),
       output: {
         entryFileNames: 'bin/ts-test-runner',
         format: 'es',
@@ -60,7 +63,9 @@ const __dirname = ___path.dirname(___fileURLToPath(import.meta.url));
 const ___norm = (p) => p.replace(/\\\\/g, '/');
 // Register aliases
 ___moduleAlias.addAlias('jasmine-core', ___norm(___path.join(__dirname, '../vendor/jasmine-core')));
-___moduleAlias.addAlias('esbuild', ___norm(___path.join(__dirname, '../vendor/esbuild')));
+___moduleAlias.addAlias('fdir', ___norm(___path.join(__dirname, '../vendor/fdir')));
+___moduleAlias.addAlias('picomatch', ___norm(___path.join(__dirname, '../vendor/picomatch')));
+___moduleAlias.addAlias('vite', ___norm(___path.join(__dirname, '../vendor/vite')));
 ___moduleAlias.addAlias('playwright-core', ___norm(___path.join(__dirname, '../vendor/playwright-core')));
 ___moduleAlias.addAlias('playwright', ___norm(___path.join(__dirname, '../vendor/playwright')));
 `,

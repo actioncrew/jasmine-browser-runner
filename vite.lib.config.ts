@@ -21,7 +21,7 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: false,
     lib: {
-      entry: path.resolve(__dirname, 'index.ts'),
+      entry: path.resolve(__dirname, './src/console-reporter.ts'),
       name: 'TsTestRunner',
       formats: ['es'],
       fileName: () => `ts-test-runner/lib/index.js`
@@ -42,12 +42,27 @@ export default defineConfig({
         return false;
       },
       output: {
-        // Preserve module structure for better tree-shaking
-        preserveModules: false,
-        // Global variables for UMD build (if needed)
-        globals: {
-          // Add any global mappings if you decide to add UMD format
-        }
+        banner: `// Setup module aliases before anything else
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+const ___fileURLToPath = require('url').fileURLToPath;
+const ___path = require('path');
+
+const ___moduleAlias = require('../vendor/module-alias');
+
+const __dirname = ___path.dirname(___fileURLToPath(import.meta.url));
+const ___norm = (p) => p.replace(/\\\\/g, '/');
+// Register aliases
+___moduleAlias.addAlias('jasmine-core', ___norm(___path.join(__dirname, '../vendor/jasmine-core')));
+___moduleAlias.addAlias('fdir', ___norm(___path.join(__dirname, '../vendor/fdir')));
+___moduleAlias.addAlias('picomatch', ___norm(___path.join(__dirname, '../vendor/picomatch')));
+___moduleAlias.addAlias('vite', ___norm(___path.join(__dirname, '../vendor/vite')));
+___moduleAlias.addAlias('playwright-core', ___norm(___path.join(__dirname, '../vendor/playwright-core')));
+___moduleAlias.addAlias('playwright', ___norm(___path.join(__dirname, '../vendor/playwright')));
+`,
+        inlineDynamicImports: true,
+        manualChunks: undefined
       }
     }
   },
